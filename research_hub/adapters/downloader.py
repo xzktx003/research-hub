@@ -9,7 +9,22 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .retry import RetryConfig, run_with_retry
 from .types import AdapterResult
+
+
+class _RetryableDownloadError(Exception):
+    """Internal sentinel: a download attempt degraded at the network layer.
+
+    Raised when ``_attempt_download`` returns an ``AdapterResult`` with status
+    ``degraded`` so the shared retry helper can back off and try again, while
+    deterministic failures (bad scheme / content-type / magic bytes / size) are
+    returned directly and never retried.
+    """
+
+    def __init__(self, result: AdapterResult) -> None:
+        super().__init__(result.message or "download degraded")
+        self.result = result
 
 
 def _env_proxies() -> list[str | None]:
@@ -55,11 +70,13 @@ class PdfDownloadAdapter:
         max_bytes: int | None = None,
         user_agent: str = "ResearchHub/0.1 PDF downloader",
         proxies: list[str | None] | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.max_bytes = max_bytes or int(os.getenv("RESEARCH_HUB_MAX_PDF_BYTES", str(80 * 1024 * 1024)))
         self.user_agent = user_agent
         self.proxies = proxies if proxies is not None else _env_proxies()
+        self.retry_config = retry_config or RetryConfig(max_attempts=3, base_delay=1.0)
 
     def _client(self, proxy: str | None) -> httpx.Client:
         if proxy:
@@ -67,6 +84,18 @@ class PdfDownloadAdapter:
         # trust_env=False ignores any ambient HTTP(S)_PROXY so this is a true
         # direct connection even when the process inherited proxy env vars.
         return httpx.Client(timeout=self.timeout_seconds, follow_redirects=True, trust_env=False)
+
+    def _attempt_download_or_raise(self, url: str, artifact_root: Path, proxy: str | None) -> AdapterResult:
+        """Adapt an ``_attempt_download`` result for the retry loop.
+
+        Degraded (network-level) results are raised as
+        :class:`_RetryableDownloadError` so the shared backoff can retry them;
+        ok/failed results are returned untouched.
+        """
+        result = self._attempt_download(url, artifact_root, proxy)
+        if result.status == "degraded":
+            raise _RetryableDownloadError(result)
+        return result
 
     def _attempt_download(self, url: str, artifact_root: Path, proxy: str | None) -> AdapterResult:
         parsed = urlparse(url)
@@ -165,7 +194,7 @@ class PdfDownloadAdapter:
         root = Path(artifact_root).expanduser().resolve()
         failures: list[dict[str, str]] = []
         for proxy in self.proxies:
-            result = self._attempt_download(url, root, proxy)
+            result = self._attempt_with_retry(url, root, proxy)
             if result.status == "ok":
                 return result
             if result.status == "failed":
@@ -178,3 +207,16 @@ class PdfDownloadAdapter:
             url=url,
             attempts=failures,
         )
+
+    def _attempt_with_retry(self, url: str, root: Path, proxy: str | None) -> AdapterResult:
+        """Run a single transport's download with exponential backoff on the
+        network-level (degraded) failures. Deterministic failures return
+        immediately without retrying.
+        """
+        try:
+            return run_with_retry(
+                lambda: self._attempt_download_or_raise(url, root, proxy),
+                config=self.retry_config,
+            )
+        except _RetryableDownloadError as exc:
+            return exc.result

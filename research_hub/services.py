@@ -12,6 +12,8 @@ from typing import Any
 
 from .adapters.downloader import PdfDownloadAdapter
 from .adapters.render_pdf import MarkdownPdfRenderAdapter
+from .adapters.references import extract_reference_links, parse_references
+from .adapters.sections import section_anchors, split_markdown_sections
 from .adapters import (
     AdapterResult,
     ArxivDiscoveryAdapter,
@@ -444,6 +446,7 @@ class ResearchJobService:
                     "mineru_job_id": job.external_task_id,
                     "remote_markdown_path": markdown_path,
                     "checksum": file_sha256(output),
+                    "sections": self._extract_markdown_sections(output),
                 },
                 checksum=file_sha256(output),
             ),
@@ -1521,6 +1524,33 @@ class ResearchJobService:
             if path.is_file():
                 return path.read_text(encoding="utf-8", errors="replace")
         return None
+
+    def _extract_markdown_sections(self, markdown_path: str | Path) -> list[dict]:
+        """Extract structural sections from a parsed Markdown artifact.
+
+        Returns ``[{"heading","level","content"}]`` plus a ``toc`` anchor map
+        and best-effort ``references`` kept alongside the artifact so the
+        reader can offer in-document navigation and citation links. Failures
+        are non-fatal: an empty list keeps the parse result valid.
+        """
+        try:
+            path = Path(markdown_path).expanduser()
+            if not path.is_file():
+                return []
+            text = path.read_text(encoding="utf-8", errors="replace")
+            sections = split_markdown_sections(text)
+            toc = section_anchors(sections)
+            references = parse_references(text)
+            return [
+                {
+                    "toc": toc,
+                    "sections": sections,
+                    "references": references,
+                    "reference_links": extract_reference_links(text),
+                }
+            ]
+        except Exception:
+            return []
 
     def _artifact_text(self, artifact_id: str) -> str | None:
         if not artifact_id:

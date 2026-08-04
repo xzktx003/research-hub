@@ -684,3 +684,85 @@ def test_reader_one_liner_shown_on_document_pane_top() -> None:
     assert "reader-paper-summary" in styles
     # The left nav meta is reset to its default placeholder (no one-liner there).
     assert 'selectedMeta.textContent = "选择一篇论文查看详情。"' in app
+
+
+def test_paper_card_surfaces_code_and_citation_metadata() -> None:
+    """论文卡片应展示来自 metadata 的代码链接与引用数等增强信息。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function paperCodeUrl" in app
+    assert "function paperCitationCount" in app
+    assert "function paperMetaTags" in app
+    assert "paperMetaTags(paper)" in app
+    assert "引用 " in app  # citations tag label
+    assert "代码" in app  # code tag label
+    assert ".paper-meta-tag" in styles
+    assert "paper-ext-link" in app
+    assert ".paper-ext-link" in styles
+
+
+def test_paper_card_similar_papers_entry() -> None:
+    """相似论文入口：基于共同主题与关键词，展示可点击的相似论文。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert "data-similar-papers" in app
+    assert "function showSimilarPapers" in app
+    assert "function similarPapers" in app
+    assert "相似论文" in app
+    assert ".similar-paper-row" in styles
+    assert ".similar-score" in styles
+
+
+def test_reader_has_keyboard_shortcuts_and_theme_toggle() -> None:
+    """阅读器快捷键 + 夜间模式设置。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function handleReaderShortcuts" in app
+    assert 'key === "j"' in app
+    assert 'key === "k"' in app
+    assert 'key === "s"' in app
+    assert "syncDocTabs" in app
+    # Theme toggle UI + logic + dark CSS.
+    assert 'id="themeModeInput"' in index
+    assert "function applyTheme" in app
+    assert "function loadTheme" in app
+    assert "theme-dark" in styles
+    assert "localStorage.setItem(THEME_KEY" in app
+
+
+def test_paper_library_has_sort_batch_and_search_highlight() -> None:
+    """论文库：多因子排序、批量选择操作、搜索高亮。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="sortFilter"' in index
+    assert "function paperHeatScore" in app
+    assert 'sortBy === "hot"' in app
+    assert "state.batchSelected" in app
+    assert 'id="selectAllVisibleBtn"' in index
+    assert 'id="batchNotebookBtn"' in index
+    assert "function batchAddToNotebook" in app
+    assert ".paper-batch-bar" in styles
+    assert "function highlightQuery" in app
+    assert "<mark>" in app
+    assert "mark {" in styles
+
+
+def test_dashboard_has_recommended_reading_panel() -> None:
+    """仪表盘新增今日推荐阅读面板，展示可解释的推荐原因。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="recommendedReading"' in index
+    assert "function renderRecommendedReading" in app
+    assert "今日推荐阅读" in index
+    assert "data-recommend-open" in app
+    assert "命中主题" in app
+    assert ".recommended-item" in styles
+

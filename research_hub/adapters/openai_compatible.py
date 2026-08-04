@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from .retry import RetryConfig, run_with_retry
 from .types import AdapterResult, ReadingReportRequest
 
 
@@ -35,12 +36,14 @@ class OpenAICompatibleResearchAdapter:
         model: str,
         timeout_seconds: float = 300.0,
         max_input_chars: int = 120_000,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_input_chars = max_input_chars
+        self.retry_config = retry_config or RetryConfig(max_attempts=3, base_delay=1.0)
 
     def health(self) -> AdapterResult:
         if not self.base_url or not self.model:
@@ -165,6 +168,14 @@ score 是包含 overall（0-10）的对象。请区分论文事实、你的分�
             usage=response.data.get("usage"),
         )
 
+    def _post_chat(self, payload: dict[str, Any]) -> httpx.Response:
+        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            return client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"Content-Type": "application/json", **self._headers()},
+                json=payload,
+            )
+
     def _chat(self, *, system: str, user: str) -> AdapterResult:
         payload = {
             "model": self.model,
@@ -175,12 +186,10 @@ score 是包含 overall（0-10）的对象。请区分论文事实、你的分�
             "temperature": 0.1,
         }
         try:
-            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-                response = client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Content-Type": "application/json", **self._headers()},
-                    json=payload,
-                )
+            response = run_with_retry(
+                lambda: self._post_chat(payload),
+                config=self.retry_config,
+            )
             response.raise_for_status()
             data: dict[str, Any] = response.json()
             content = data["choices"][0]["message"]["content"]

@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from .retry import RetryConfig, run_with_retry
 from .types import AdapterResult, PaperHit, TopicQuery
 
 
@@ -75,23 +76,21 @@ class FixtureBackedDiscoveryAdapter:
         return self._request_json(self._request_params(topic))
 
     def _request_json(self, params: Mapping[str, str]) -> Any:
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                with httpx.Client(timeout=self.timeout_seconds, transport=self.transport) as client:
-                    response = client.get(self.api_url, params=dict(params))
-                response.raise_for_status()
-                return response.json()
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                last_error = exc
-                response = getattr(exc, "response", None)
-                status = int(response.status_code) if response is not None else None
-                if attempt >= self.max_retries or (status is not None and status != 429 and status < 500):
-                    break
-                retry_after = _retry_after(response)
-                time.sleep(min(retry_after or self.retry_base_seconds * (2**attempt), 60.0))
-        assert last_error is not None
-        raise last_error
+        return run_with_retry(
+            lambda: self._get_json(dict(params)),
+            config=RetryConfig(
+                max_attempts=self.max_retries + 1,
+                base_delay=self.retry_base_seconds,
+                max_delay=60.0,
+                jitter=0.0,
+            ),
+        )
+
+    def _get_json(self, params: dict[str, str]) -> Any:
+        with httpx.Client(timeout=self.timeout_seconds, transport=self.transport) as client:
+            response = client.get(self.api_url, params=params)
+        response.raise_for_status()
+        return response.json()
 
     def _request_params(self, topic: TopicQuery) -> dict[str, str]:
         return {"query": " ".join(topic.include_terms), "limit": str(topic.max_results)}
@@ -569,15 +568,3 @@ def _matches_topic(hit: PaperHit, topic: TopicQuery) -> bool:
     if any(term.casefold() in haystack for term in topic.exclude_terms):
         return False
     return not topic.include_terms or any(term.casefold() in haystack for term in topic.include_terms)
-
-
-def _retry_after(response: httpx.Response | None) -> float | None:
-    if response is None:
-        return None
-    value = response.headers.get("Retry-After")
-    if not value:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        return None

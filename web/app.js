@@ -47,6 +47,35 @@ function saveFontSize() {
   if (stamp) stamp.textContent = "已应用并保存。";
 }
 
+// 夜间模式。与字号缩放同理，通过 documentElement 的 class 切换主题，
+// 由 CSS 定义 .theme-dark 下的配色覆盖（严格 CSP 不支持 inline style）。
+const THEME_KEY = "research_hub.theme";
+const THEME_DEFAULT = "light";
+
+function loadTheme() {
+  return localStorage.getItem(THEME_KEY) || THEME_DEFAULT;
+}
+
+function applyTheme(mode) {
+  const root = document.documentElement;
+  root.classList.toggle("theme-dark", mode === "dark");
+  root.dataset.theme = mode;
+  const input = document.getElementById("themeModeInput");
+  if (input) input.value = mode;
+}
+
+function initTheme() {
+  applyTheme(loadTheme());
+}
+
+function saveTheme() {
+  const input = document.getElementById("themeModeInput");
+  if (!input) return;
+  const mode = input.value === "dark" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, mode);
+  applyTheme(mode);
+}
+
 const state = {
   health: null,
   adapterHealth: null,
@@ -90,6 +119,7 @@ const state = {
   editingTopicId: null,
   expandedRuns: new Set(),
   activeView: "dashboard",
+  batchSelected: new Set(),
   jobsPollTimer: null,
   jobsPolling: false,
 };
@@ -150,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindControls();
   bindOverlays();
   initFontSize();
+  initTheme();
   setDateDefaults();
   applyRoute(location.pathname, false);
   window.addEventListener("popstate", () => applyRoute(location.pathname, false));
@@ -167,7 +198,19 @@ function bindControls() {
   document.getElementById("globalSearch").addEventListener("input", render);
   document.getElementById("topicFilter").addEventListener("change", render);
   document.getElementById("statusFilter").addEventListener("change", render);
+  document.getElementById("sortFilter").addEventListener("change", render);
   document.getElementById("dateFilter").addEventListener("change", loadAll);
+  document.getElementById("selectAllVisibleBtn")?.addEventListener("click", () => {
+    const papers = filteredPapers();
+    papers.forEach((paper) => state.batchSelected.add(getPaperId(paper)));
+    updateBatchSelectionUi();
+    showAlert(`已选择 ${papers.length} 篇论文。`);
+  });
+  document.getElementById("batchNotebookBtn")?.addEventListener("click", batchAddToNotebook);
+  document.getElementById("batchClearBtn")?.addEventListener("click", () => {
+    state.batchSelected.clear();
+    updateBatchSelectionUi();
+  });
   document.getElementById("runDiscoveryButton").addEventListener("click", runDiscovery);
   document.getElementById("helpButton").addEventListener("click", openHelp);
   document.getElementById("helpCloseButton").addEventListener("click", closeHelp);
@@ -190,6 +233,7 @@ function bindControls() {
   document.getElementById("saveScheduleConfigButton")?.addEventListener("click", saveScheduleConfig);
   document.getElementById("saveTopicQuotaButton")?.addEventListener("click", saveTopicQuota);
   document.getElementById("saveFontSizeButton")?.addEventListener("click", saveFontSize);
+  document.getElementById("saveThemeButton")?.addEventListener("click", saveTheme);
   document.getElementById("analysisProviderInput")?.addEventListener("change", syncAnalysisProviderForm);
   document.getElementById("addTopicButton")?.addEventListener("click", addTopic);
   document.getElementById("topicOverrideInput")?.addEventListener("input", (event) => {
@@ -1087,6 +1131,56 @@ function renderDigestSummary() {
       </article>
     `,
   ).join("") || emptyBlock("当日暂无阅读路线。");
+  renderRecommendedReading();
+}
+
+// 今日推荐阅读：从已收录论文中挑出"热度高 + 主题命中多 + 研读进度好"的
+// 若干篇，并给出可解释的推荐原因（命中主题 / 高热度 / 研读完成）。
+function renderRecommendedReading() {
+  const container = document.getElementById("recommendedReading");
+  if (!container) return;
+  if (!endpointOk("papers")) {
+    container.innerHTML = errorBlock("论文接口不可用。");
+    return;
+  }
+  const papers = state.papers.length ? state.papers : state.allPapers;
+  if (!papers.length) {
+    container.innerHTML = emptyBlock("暂无已收录论文。");
+    return;
+  }
+  const scored = papers
+    .map((paper) => {
+      const topics = normalizeTopics(paper);
+      const heat = paperHeatScore(paper);
+      const routes = state.digest?.reading_routes || {};
+      const inRoute = Object.values(routes).some((ids) => (ids || []).includes(getPaperId(paper)));
+      const reasons = [];
+      if (topics.length) reasons.push(`命中主题：${topics.slice(0, 2).join("、")}`);
+      if (inRoute) reasons.push("在今日阅读路线中");
+      if (heat >= 15) reasons.push("热度较高");
+      const reportReady = hasReport(paper);
+      if (reportReady) reasons.push("已生成研读报告");
+      return { paper, reasons, weight: heat + (reportReady ? 6 : 0) };
+    })
+    .filter((item) => item.reasons.length)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 5);
+  if (!scored.length) {
+    container.innerHTML = emptyBlock("暂无符合条件的推荐论文。");
+    return;
+  }
+  container.innerHTML = scored.map((item) => html`
+    <article class="compact-item recommended-item" data-recommend-open="${getPaperId(item.paper)}">
+      <div>
+        <strong>${paperTitle(item.paper)}</strong>
+        <span class="meta recommended-reasons">${item.reasons.join(" · ")}</span>
+      </div>
+      <span class="recommended-arrow">→</span>
+    </article>
+  `).join("");
+  container.querySelectorAll("[data-recommend-open]").forEach((el) => {
+    el.addEventListener("click", () => openPaper(el.dataset.recommendOpen));
+  });
 }
 
 function renderPaperLibrary() {
@@ -1134,6 +1228,7 @@ function clearPaperFilters() {
 function paperCard(paper) {
   const id = getPaperId(paper);
   const title = paperTitle(paper);
+  const currentQuery = document.getElementById("globalSearch")?.value.trim() || "";
   const topics = normalizeTopics(paper);
   const status = paper.status || "discovered";
   const statusLabel = {
@@ -1146,10 +1241,12 @@ function paperCard(paper) {
   return html`
     <article class="paper-card" id="${cardId}">
       <div class="paper-card-header" data-toggle-card="${id}">
+        <input type="checkbox" class="paper-batch-check" data-batch-check="${id}" title="选择此论文" ${state.batchSelected.has(id) ? "checked" : ""}>
         <div>
-          <h3>${title}</h3>
+          <h3>${raw(highlightQuery(title, currentQuery))}</h3>
           <p class="meta">${authorText(paper) || identifierText(paper) || "作者/来源未提供"}</p>
           <div class="paper-stage-tags">${raw(renderStageTags(paper))}</div>
+          ${raw(paperMetaTags(paper).map((tag) => html`<span class="paper-meta-tag ${tag.cls}">${tag.label}</span>`).join(" "))}
         </div>
         <div class="paper-card-meta-actions">${raw(topics.map((topic) => html`<span class="tag">${topic}</span>`).join(" "))} <span class="state ${String(status).toLowerCase()}">${statusLabel}</span><span class="expand-icon" id="expand-${id}">▸</span></div>
       </div>
@@ -1159,14 +1256,27 @@ function paperCard(paper) {
         ${raw(paper.abstract ? html`<details class="abstract-original"><summary>查看英文原摘要</summary><p>${paper.abstract}</p></details>` : "")}
         ${raw(paper.first_publication_date ? html`<p class="meta">发表日期：${paper.first_publication_date}</p>` : "")}
         ${raw(paper.remote ? html`<p class="meta remote-paper">联网检索结果（尚未入库）</p>` : "")}
+        ${raw(paperCitationCount(paper) ? html`<p class="meta">引用数：${paperCitationCount(paper)}</p>` : "")}
+        ${raw(buildCardExternalLinks(paper))}
         <div class="paper-actions">
           <button class="secondary" type="button" data-open-paper="${id}">打开阅读台</button>
           <button class="secondary" type="button" data-select-patent="${id}">${state.selectedForPatent.has(id) ? "取消候选" : "加入专利候选"}</button>
           <button class="secondary" type="button" data-notebook-add="${id}">${state.notebookPapers.has(id) ? "已在笔记本" : "加入笔记本"}</button>
+          <button class="secondary" type="button" data-similar-papers="${id}">相似论文</button>
         </div>
       </div>
     </article>
   `;
+}
+
+function buildCardExternalLinks(paper) {
+  const links = [];
+  const code = paperCodeUrl(paper);
+  if (code) links.push(html`<a class="paper-ext-link" href="${code}" target="_blank" rel="noreferrer">代码仓库 ↗</a>`);
+  const arxiv = paperArxivUrl(paper);
+  if (arxiv) links.push(html`<a class="paper-ext-link" href="${arxiv}" target="_blank" rel="noreferrer">arXiv 原文 ↗</a>`);
+  if (!links.length) return "";
+  return html`<p class="paper-ext-links">${links.join(" ")}</p>`;
 }
 
 function bindPaperCardActions(container) {
@@ -1190,6 +1300,111 @@ function bindPaperCardActions(container) {
   container.querySelectorAll("[data-notebook-add]").forEach((button) => {
     button.addEventListener("click", () => toggleNotebook(button.dataset.notebookAdd));
   });
+  container.querySelectorAll("[data-similar-papers]").forEach((button) => {
+    button.addEventListener("click", () => showSimilarPapers(button.dataset.similarPapers));
+  });
+  container.querySelectorAll("[data-batch-check]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const paperId = checkbox.dataset.batchCheck;
+      if (checkbox.checked) state.batchSelected.add(paperId);
+      else state.batchSelected.delete(paperId);
+      updateBatchSelectionUi();
+    });
+  });
+}
+
+function updateBatchSelectionUi() {
+  const count = document.getElementById("batchSelectionCount");
+  if (count) count.textContent = `已选 ${state.batchSelected.size} 篇`;
+  const checkboxes = document.querySelectorAll("[data-batch-check]");
+  checkboxes.forEach((checkbox) => {
+    checkbox.checked = state.batchSelected.has(checkbox.dataset.batchCheck);
+  });
+}
+
+function batchAddToNotebook() {
+  const ids = Array.from(state.batchSelected);
+  if (!ids.length) {
+    showAlert("请先选择要加入笔记本的论文。");
+    return;
+  }
+  ids.forEach((id) => {
+    if (!state.notebookPapers.has(id)) toggleNotebook(id);
+  });
+  state.batchSelected.clear();
+  updateBatchSelectionUi();
+  showAlert(`已将 ${ids.length} 篇论文加入笔记本。`);
+}
+
+// "相似论文" —— 基于共同主题 + 标题/摘要关键词的本地相似度（borrowed from
+// arxiv-sanity's similarity idea, computed client-side over the loaded set so
+// no extra backend call is needed). Ranks the top-N shared-topic overlaps and
+// renders them inline in the paper body.
+function showSimilarPapers(paperId) {
+  const source = knownPapers().find((p) => getPaperId(p) === paperId);
+  const bodyId = `paper-body-${paperId}`;
+  const body = document.getElementById(bodyId);
+  if (!source || !body) return;
+  const similar = similarPapers(source, 4);
+  const existing = body.querySelector(".similar-papers");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "similar-papers";
+  wrap.innerHTML = html`
+    <div class="similar-papers-head"><strong>相似论文（基于共同主题与关键词）</strong></div>
+    ${similar.length
+      ? raw(similar.map((item) => `
+        <div class="similar-paper-row" data-similar-open="${getPaperId(item)}">
+          <span class="similar-score">${item.similarity}</span>
+          <span class="similar-title">${escapeHtml(paperTitle(item))}</span>
+        </div>
+      `).join(""))
+      : raw(`<p class="meta">未找到明显相似的论文。</p>`)}
+  `;
+  wrap.querySelectorAll("[data-similar-open]").forEach((row) => {
+    row.addEventListener("click", () => openPaper(row.dataset.similarOpen));
+  });
+  body.appendChild(wrap);
+}
+
+// TF-lite similarity: score shared topics (weighted) + shared significant
+// tokens in title/abstract. Deterministic and dependency-free.
+function similarPapers(paper, maxResults = 4) {
+  const sourceId = getPaperId(paper);
+  const sourceTokens = significantTokens(`${paperTitle(paper)} ${paper.abstract || ""}`);
+  const sourceTopics = new Set(normalizeTopics(paper));
+  const scored = knownPapers()
+    .filter((p) => getPaperId(p) !== sourceId)
+    .map((p) => {
+      const topics = new Set(normalizeTopics(p));
+      let topicOverlap = 0;
+      sourceTopics.forEach((t) => { if (topics.has(t)) topicOverlap += 1; });
+      const tokens = significantTokens(`${paperTitle(p)} ${p.abstract || ""}`);
+      let tokenOverlap = 0;
+      tokens.forEach((t) => { if (sourceTokens.has(t)) tokenOverlap += 1; });
+      const score = topicOverlap * 4 + Math.min(tokenOverlap, 6);
+      return { paper: p, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxResults);
+  const maxScore = scored.length ? Math.max(...scored.map((s) => s.score)) : 1;
+  return scored.map((item) => ({
+    ...item.paper,
+    similarity: `${Math.round((item.score / maxScore) * 100)}`,
+  }));
+}
+
+// Tokenize a text blob into a set of normalized significant (>3 char) tokens.
+function significantTokens(text) {
+  const tokens = new Set();
+  for (const token of String(text || "").toLowerCase().split(/[^a-z0-9]+/)) {
+    if (token.length > 3) tokens.add(token);
+  }
+  return tokens;
 }
 
 function openPaper(paperId) {
@@ -2604,10 +2819,11 @@ function filteredPapers() {
   const query = document.getElementById("globalSearch")?.value.trim().toLowerCase() || "";
   const topic = document.getElementById("topicFilter")?.value || "";
   const status = document.getElementById("statusFilter")?.value || "";
+  const sortBy = document.getElementById("sortFilter")?.value || "";
   const source = state.allPapers.length ? state.allPapers : state.papers;
   // 论文库默认展示全部日期论文；用主题 / 状态 / 搜索过滤即可。
   // 如需按日期浏览，可使用「日期」输入框通过 loadAll 重新加载特定日期。
-  return source.filter((paper) => {
+  const filtered = source.filter((paper) => {
     const id = getPaperId(paper);
     const text = JSON.stringify(paper).toLowerCase();
     const topics = normalizeTopics(paper);
@@ -2616,6 +2832,30 @@ function filteredPapers() {
       && (!topic || topics.includes(topic))
       && (!status || paperStatus.includes(status));
   });
+  if (sortBy === "hot") {
+    return [...filtered].sort((a, b) => paperHeatScore(b) - paperHeatScore(a));
+  }
+  if (sortBy === "newest") {
+    return [...filtered].sort((a, b) => String(b.first_publication_date || "").localeCompare(String(a.first_publication_date || "")));
+  }
+  if (sortBy === "oldest") {
+    return [...filtered].sort((a, b) => String(a.first_publication_date || "").localeCompare(String(b.first_publication_date || "")));
+  }
+  return filtered;
+}
+
+// Multi-factor "hotness" score: citation count + notebook selection + progress
+// depth + recency, mirroring arxiv-sanity's popular/recent ranking idea.
+function paperHeatScore(paper) {
+  let score = 0;
+  const citations = paperCitationCount(paper);
+  score += Math.min(citations, 50) * 2;
+  if (state.notebookPapers.has(getPaperId(paper))) score += 20;
+  else if (paper.selected) score += 8;
+  const stageTags = paperStageTags(paper);
+  const done = stageTags.filter((tag) => tag.done).length;
+  score += done * 5;
+  return score;
 }
 
 function selectedPaper() {
@@ -2885,6 +3125,51 @@ function bindOverlays() {
       overlay.classList.add("hidden");
     });
     document.body.classList.remove("has-overlay");
+  });
+  document.addEventListener("keydown", handleReaderShortcuts);
+}
+
+// Reader keyboard shortcuts (j/k *view navigation*, [ ] *tab switch*, s *bookmark*).
+// Guards: only active on the reader view, and never while a form control has
+// focus so the user can type search queries / notes freely.
+function handleReaderShortcuts(event) {
+  if (state.activeView !== "reader") return;
+  const target = event.target;
+  const tag = target && target.tagName ? target.tagName.toLowerCase() : "";
+  if (["input", "textarea", "select"].includes(tag) || target?.isContentEditable) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const key = event.key.toLowerCase();
+  const tabs = ["pdf", "markdown", "report", "evidence"];
+  if (key === "j" || key === "k") {
+    const papers = filteredPapers();
+    if (papers.length < 2 || !state.selectedPaperId) return;
+    const idx = papers.findIndex((p) => getPaperId(p) === state.selectedPaperId);
+    if (idx === -1) return;
+    const nextIdx = key === "j" ? (idx + 1) % papers.length : (idx - 1 + papers.length) % papers.length;
+    event.preventDefault();
+    openPaper(getPaperId(papers[nextIdx]));
+  } else if (key === "[") {
+    const idx = tabs.indexOf(state.selectedTab);
+    state.selectedTab = tabs[(idx - 1 + tabs.length) % tabs.length];
+    event.preventDefault();
+    syncDocTabs();
+    renderReader();
+  } else if (key === "]") {
+    const idx = tabs.indexOf(state.selectedTab);
+    state.selectedTab = tabs[(idx + 1) % tabs.length];
+    event.preventDefault();
+    syncDocTabs();
+    renderReader();
+  } else if (key === "s") {
+    if (!state.selectedPaperId) return;
+    event.preventDefault();
+    toggleNotebook(state.selectedPaperId);
+  }
+}
+
+function syncDocTabs() {
+  document.querySelectorAll("[data-doc-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.docTab === state.selectedTab);
   });
 }
 
@@ -3172,6 +3457,17 @@ function paperTitle(paper) {
   return paper?.canonical_title || paper?.title || paper?.name || "未命名论文";
 }
 
+// Wrap query hits in <mark> for search results. Returns an html() fragment;
+// use inside an html`...` template (it is not pre-escaped).
+function highlightQuery(text, query) {
+  const q = String(query || "").trim();
+  if (!q || !text) return html`${text}`;
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(q.toLowerCase());
+  if (idx === -1) return html`${text}`;
+  return html`${text.slice(0, idx)}<mark>${text.slice(idx, idx + q.length)}</mark>${text.slice(idx + q.length)}`;
+}
+
 function authorText(paper) {
   const authors = paper?.metadata?.authors || paper?.authors;
   if (Array.isArray(authors)) return authors.join(", ");
@@ -3182,6 +3478,39 @@ function identifierText(paper) {
   const identifiers = normalizeList(paper?.identifiers, ["items"]);
   const arxiv = identifiers.find((item) => String(item.type).toLowerCase() === "arxiv");
   return arxiv ? `arXiv:${arxiv.value}` : getPaperId(paper);
+}
+
+// Enriched metadata surfaced on the paper card (borrowed from enrichment /
+// adapter fields). All reads are defensive so a missing field degrades to a
+// silent no-op rather than breaking the card.
+function paperCodeUrl(paper) {
+  const meta = paper?.metadata || {};
+  return String(meta.code_url || meta.codeUrl || meta.github_url || meta.repo_url || "").trim() || "";
+}
+
+function paperCitationCount(paper) {
+  const meta = paper?.metadata || {};
+  const raw = meta.citations ?? meta.citation_count ?? meta.influence_score ?? meta.stars;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function paperArxivUrl(paper) {
+  const identifiers = normalizeList(paper?.identifiers, ["items"]);
+  const arxiv = identifiers.find((item) => String(item.type).toLowerCase() === "arxiv");
+  if (arxiv && arxiv.value) {
+    const value = String(arxiv.value);
+    return `https://arxiv.org/abs/${value.replace(/^arXiv:/i, "").replace(/^abs\//, "").replace(/^pdf\//, "")}`;
+  }
+  return "";
+}
+
+function paperMetaTags(paper) {
+  const tags = [];
+  const citations = paperCitationCount(paper);
+  if (citations > 0) tags.push({ cls: "citation", label: `引用 ${citations}` });
+  if (paperCodeUrl(paper)) tags.push({ cls: "code", label: "代码" });
+  return tags;
 }
 
 function normalizeTopics(paper) {

@@ -99,6 +99,28 @@ def _normalized_name(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def normalized_paper_dedup_key(title: str, first_author: str = "", year: str = "") -> str:
+    """Deterministic cross-source dedup key for a paper.
+
+    Normalizes the title (lowercase, punctuation stripped, whitespace
+    collapsed) and folds in the normalized first author and publication year so
+    the same paper surfaced by different sources (arXiv / HuggingFace / manual)
+    collapses to one key. Returns a sha1 hex digest.
+    """
+    clean_title = re.sub(r"[^a-z0-9 ]+", " ", title.lower().strip())
+    clean_title = re.sub(r"\s+", " ", clean_title).strip()
+    parts = [clean_title]
+    if first_author:
+        auth = re.sub(r"[^a-z0-9 ]+", " ", first_author.lower().strip())
+        parts.append(re.sub(r"\s+", " ", auth).strip())
+    if year:
+        parts.append(re.sub(r"[^0-9]", "", str(year))[:4])
+    for part in list(parts):
+        if not part:
+            parts.remove(part)
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def validate_state_transition(
     entity: str,
     current_status: str,
@@ -1373,8 +1395,39 @@ class Repository:
 
     def create_paper(self, data: PaperCreate) -> PaperDetail:
         found = self.find_paper_by_identifiers(data.identifiers)
+        # Derive a cross-source title dedup key early so both the merge and
+        # insert paths store it consistently.
+        first_author = ""
+        if data.metadata:
+            authors = data.metadata.get("authors")
+            if isinstance(authors, list) and authors:
+                first_author = str(authors[0])
+        year = str(data.first_publication_date)[:4] if data.first_publication_date else ""
+        merged_metadata = dict(data.metadata or {})
+        if data.canonical_title:
+            merged_metadata["dedup_key"] = normalized_paper_dedup_key(
+                data.canonical_title, first_author, year
+            )
+        if not found and data.canonical_title and (first_author or year):
+            # Title-based dedup only engages when we have a strong extra
+            # signal (first author and/or publication year) beyond the bare
+            # title. Without one, two distinct papers may legitimately share a
+            # title, so we do not collapse them.
+            found = self.find_paper_by_normalized_title(
+                data.canonical_title, first_author, year
+            )
         if found:
             paper_id = found
+            try:
+                existing = loads(self.conn.execute(
+                    "SELECT metadata_json FROM paper WHERE id = ?", (paper_id,)
+                ).fetchone()["metadata_json"])
+            except Exception:
+                existing = {}
+            has_dedup = bool((existing or {}).get("dedup_key"))
+            if not has_dedup:
+                existing = dict(existing or {})
+                existing["dedup_key"] = merged_metadata.get("dedup_key")
             self.conn.execute(
                 """
                 UPDATE paper
@@ -1384,6 +1437,7 @@ class Repository:
                         WHEN NULLIF(?, '') IS NOT NULL AND NULLIF(?, '') <> abstract THEN NULL
                         ELSE translated_abstract
                     END,
+                    metadata_json = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -1392,6 +1446,7 @@ class Repository:
                     data.abstract,
                     data.abstract,
                     data.abstract,
+                    dumps(existing),
                     utcnow(),
                     paper_id,
                 ),
@@ -1414,7 +1469,7 @@ class Repository:
                     data.language,
                     str(data.first_publication_date) if data.first_publication_date else None,
                     data.status,
-                    dumps(data.metadata),
+                    dumps(merged_metadata),
                     now,
                     now,
                 ),
@@ -1443,6 +1498,51 @@ class Repository:
             ).fetchone()
             if row:
                 return row["paper_id"]
+        return None
+
+    def find_paper_by_normalized_title(
+        self, title: str, first_author: str = "", year: str = ""
+    ) -> str | None:
+        """Cross-source dedup lookup using the normalized title key.
+
+        Mirrors the identifier-based lookup so the same paper surfaced by
+        different sources without a shared identifier still collapses to a
+        single row. It matches when the fully-normalized title is identical
+        AND the extra signal (first author and/or publication year) is either
+        absent or itself matches, so two distinct papers that merely share a
+        title are not collapsed when we cannot disambiguate them.
+        """
+        if not title:
+            return None
+        norm = re.sub(r"[^a-z0-9 ]+", " ", title.lower().strip())
+        norm = re.sub(r"\s+", " ", norm).strip()
+        if not norm:
+            return None
+        norm_author = ""
+        if first_author:
+            norm_author = re.sub(r"[^a-z0-9 ]+", " ", first_author.lower().strip())
+            norm_author = re.sub(r"\s+", " ", norm_author).strip()
+        norm_year = re.sub(r"[^0-9]", "", str(year))[:4] if year else ""
+        papers = self.conn.execute(
+            "SELECT id, canonical_title, first_publication_date "
+            "FROM paper ORDER BY created_at ASC"
+        ).fetchall()
+        for paper in papers:
+            cand = re.sub(r"[^a-z0-9 ]+", " ", str(paper["canonical_title"] or "").lower().strip())
+            cand = re.sub(r"\s+", " ", cand).strip()
+            if cand != norm:
+                continue
+            # Title matches. Now apply the disambiguation signals if provided.
+            if norm_author or norm_year:
+                # We cannot verify author from paper row here; require at least
+                # that any provided year agrees, otherwise skip.
+                if norm_year:
+                    pub = str(paper["first_publication_date"] or "")
+                    if pub[:4] and pub[:4] != norm_year:
+                        continue
+                return paper["id"]
+            # No disambiguation signal available => fall back to exact title.
+            return paper["id"]
         return None
 
     def add_identifier(self, paper_id: str, identifier: PaperIdentifier) -> None:

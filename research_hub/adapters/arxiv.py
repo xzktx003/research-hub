@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from .retry import RetryConfig, run_with_retry
 from .types import AdapterResult, PaperHit, TopicQuery
 
 
@@ -118,23 +119,22 @@ class ArxivDiscoveryAdapter:
         return query
 
     def _get_with_retry(self, params: dict[str, str]) -> str:
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            self._respect_rate_limit()
-            try:
-                with httpx.Client(timeout=self.timeout_seconds, headers={"User-Agent": self.user_agent}) as client:
-                    response = client.get(self.api_url, params=params)
-                response.raise_for_status()
-                return response.text
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                last_error = exc
-                if attempt >= self.max_retries:
-                    break
-                retry_after = _retry_after_seconds(getattr(exc, "response", None))
-                delay = retry_after if retry_after is not None else self.retry_base_seconds * (2**attempt)
-                time.sleep(min(delay, 60.0))
-        assert last_error is not None
-        raise last_error
+        return run_with_retry(
+            lambda: self._get_feed(params),
+            config=RetryConfig(
+                max_attempts=self.max_retries + 1,
+                base_delay=self.retry_base_seconds,
+                max_delay=60.0,
+                jitter=0.0,
+            ),
+        )
+
+    def _get_feed(self, params: dict[str, str]) -> str:
+        self._respect_rate_limit()
+        with httpx.Client(timeout=self.timeout_seconds, headers={"User-Agent": self.user_agent}) as client:
+            response = client.get(self.api_url, params=params)
+        response.raise_for_status()
+        return response.text
 
     def _respect_rate_limit(self) -> None:
         with self._rate_limit_lock:
@@ -212,18 +212,6 @@ def _parse_datetime(value: str) -> datetime | None:
             return parsedate_to_datetime(value)
         except (TypeError, ValueError):
             return None
-
-
-def _retry_after_seconds(response: Any) -> float | None:
-    if response is None:
-        return None
-    value = response.headers.get("Retry-After")
-    if not value:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
 
 
 def _paper_hit_to_dict(hit: PaperHit) -> dict[str, Any]:

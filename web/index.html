@@ -103,6 +103,15 @@
             <section class="panel">
               <div class="panel-heading">
                 <div>
+                  <h2>今日推荐阅读</h2>
+                  <p>综合热度、研读进度与共同主题的推荐论文（可解释：命中主题与原因）。</p>
+                </div>
+              </div>
+              <div id="recommendedReading" class="compact-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
                   <h2>来源与主题分布</h2>
                   <p>统一日报中的来源命中、去重和主题覆盖。</p>
                 </div>
@@ -152,6 +161,21 @@
               日期
               <input id="dateFilter" type="date">
             </label>
+            <label>
+              排序
+              <select id="sortFilter">
+                <option value="">默认排序</option>
+                <option value="newest">最新优先</option>
+                <option value="oldest">最早优先</option>
+                <option value="hot">热度优先</option>
+              </select>
+            </label>
+          </div>
+          <div class="paper-batch-bar">
+            <button class="secondary" type="button" id="selectAllVisibleBtn">全选当前列表</button>
+            <button class="secondary" type="button" id="batchNotebookBtn">批量加入笔记本</button>
+            <button class="secondary" type="button" id="batchClearBtn">清除选择</button>
+            <span class="meta" id="batchSelectionCount"></span>
           </div>
           <div id="paperLibrary" class="library-grid"></div>
         </section>
@@ -511,8 +535,16 @@
                     <option value="1.25">更大</option>
                   </select>
                 </label>
+                <label>
+                  主题外观
+                  <select id="themeModeInput" autocomplete="off">
+                    <option value="light">浅色</option>
+                    <option value="dark">夜间模式</option>
+                  </select>
+                </label>
               </div>
               <button class="primary" id="saveFontSizeButton" type="button">保存显示设置</button>
+              <button class="secondary" id="saveThemeButton" type="button">应用主题</button>
               <span class="font-save-hint" id="fontSaveHint"></span>
             </section>
           </div>
@@ -569,6 +601,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260804n" defer></script>
+    <script src="/static/app.js?v=20260804o" defer></script>
   </body>
 </html>
