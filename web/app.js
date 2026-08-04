@@ -1677,10 +1677,158 @@ function renderArtifactTextContent(container, url, label, text) {
   container.replaceChildren(actions, body);
 }
 
+// Lightweight, XSS-safe Markdown renderer for reading reports and drafts.
+// All source text is HTML-escaped first, then structured into tags, so no raw
+// HTML from the server can execute. Feeds re-render via innerHTML on escaped,
+// rendered output; safe by construction (no raw passthrough).
+function renderMarkdownToHtml(markdown) {
+  if (!markdown) return "";
+  const lines = String(markdown || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n");
+  const out = [];
+  const inCode = { active: false, buf: [] };
+  const flushCode = () => {
+    if (!inCode.active) return;
+    out.push(`<pre><code>${escapeHtml(inCode.buf.join("\n"))}</code></pre>`);
+    inCode.active = false;
+    inCode.buf = [];
+  };
+  const startList = { tag: null }; // track ul/ol continuity
+
+  const inline = (raw) => {
+    let s = escapeHtml(raw);
+    // fenced `inline code` -> <code>
+    s = s.replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`);
+    // **bold** and __bold__
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+         .replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    // *italic* and _italic_
+    s = s.replace(/(^|[^*\w])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>");
+    // [text](url) — only allow http(s) hrefs, whitespace-stripped
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+      const clean = url.trim();
+      if (/^https?:\/\//i.test(clean)) {
+        return `<a href="${clean}" target="_blank" rel="noreferrer">${label}</a>`;
+      }
+      return m;
+    });
+    // bare http(s) URLs -> links
+    s = s.replace(/https?:\/\/[^\s<>"'()]+/g, (url) =>
+      `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>`
+    );
+    return s;
+  };
+
+  const flushList = () => {
+    if (startList.tag) {
+      out.push(`</${startList.tag}>`);
+      startList.tag = null;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    // fenced code block ``` / ~~~
+    const fence = line.match(/^[ \t]*(```|~~~)(.*)$/);
+    if (fence) {
+      flushList();
+      if (!inCode.active) {
+        flushCode();
+        inCode.active = true;
+        inCode.buf = [];
+        // ignore optional language tag on opening fence
+        if (i + 1 < lines.length && !/^[ \t]*(```|~~~)/.test(lines[i + 1])) {
+          inCode.buf.push(lines[i + 1]);
+          i++;
+        }
+      } else {
+        flushCode();
+      }
+      continue;
+    }
+    if (inCode.active) {
+      inCode.buf.push(line);
+      continue;
+    }
+    if (/^[ \t]*$/.test(line)) {
+      flushList();
+      continue;
+    }
+    // headings # .. ######  (also 文本后 = / - )
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flushList();
+      const lvl = h[1].length;
+      out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`);
+      continue;
+    }
+    // horizontal rule
+    if (/^[ \t]*([-*_][ \t]*){3,}$/.test(line)) {
+      flushList();
+      out.push("<hr>");
+      continue;
+    }
+    // blockquote
+    if (/^[ \t]*&gt;\s?/.test(line) || /^[ \t]*>\s?/.test(line)) {
+      flushList();
+      out.push(`<blockquote>${inline(line.replace(/^[ \t]*>\s?/, ""))}</blockquote>`);
+      continue;
+    }
+    // ordered list
+    const ol = line.match(/^[ \t]*(\d+)[.)]\s+(.*)$/);
+    if (ol) {
+      if (startList.tag !== "ol") {
+        flushList();
+        out.push("<ol>");
+        startList.tag = "ol";
+      }
+      out.push(`<li>${inline(ol[2])}</li>`);
+      continue;
+    }
+    // unordered list
+    const ul = line.match(/^[ \t]*[-*+]\s+(.*)$/);
+    if (ul) {
+      if (startList.tag !== "ul") {
+        flushList();
+        out.push("<ul>");
+        startList.tag = "ul";
+      }
+      out.push(`<li>${inline(ul[1])}</li>`);
+      continue;
+    }
+    // setext heading (===  / ---)
+    if (/^[ \t]*=+[ \t]*$/.test(line) && out.length) {
+      out[out.length - 1] = out[out.length - 1].replace(/^<p>(.*)<\/p>$/, "<h1>$1</h1>");
+      continue;
+    }
+    if (/^[ \t]*-+[ \t]*$/.test(line) && startList.tag === null && out.length) {
+      // avoid treating as hr which already handled; treat as h2 only if prev was a <p>
+      if (/^<p>/.test(out[out.length - 1])) {
+        out[out.length - 1] = out[out.length - 1].replace(/^<p>(.*)<\/p>$/, "<h2>$1</h2>");
+      }
+      continue;
+    }
+    // plain paragraph (consume consecutive lines as one <p>)
+    flushList();
+    const para = [];
+    para.push(line);
+    while (i + 1 < lines.length && lines[i + 1].trim() && !/^[ \t]*[-*+]/.test(lines[i + 1]) && !/^[ \t]*\d+[.)]/.test(lines[i + 1]) && !/^#{1,6}\s/.test(lines[i + 1]) && !/^[ \t]*($|```|~~~|>)/.test(lines[i + 1])) {
+      i++;
+      para.push(lines[i]);
+    }
+    out.push(`<p>${inline(para.join(" "))}</p>`);
+  }
+  flushCode();
+  flushList();
+  return out.join("\n");
+}
+
 function renderTextDocument(container, text) {
   const body = document.createElement("div");
   body.className = "markdown-body";
-  body.textContent = text;
+  body.innerHTML = renderMarkdownToHtml(text);
   container.replaceChildren(body);
 }
 
