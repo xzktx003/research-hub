@@ -296,6 +296,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             timeout_seconds=5.0,
         )
         mineru_result = mineru.health()
+        mineru_response = (
+            mineru_result.data.get("response")
+            if isinstance(mineru_result.data, dict)
+            else None
+        )
+        mineru_meta = (
+            mineru_response.get("meta")
+            if isinstance(mineru_response, dict)
+            else None
+        )
+        mineru_resolved = (
+            mineru_meta.get("resolved_url")
+            if isinstance(mineru_meta, dict)
+            else None
+        )
+        mineru_configured = str(mineru_config.get("base_url") or "").strip()
+        mineru_message = mineru_result.message
+        if mineru_result.status == "ok":
+            if mineru_resolved and mineru_resolved != mineru_configured:
+                mineru_message = (
+                    f"MinerU 已可用；自动发现并连接到 {mineru_resolved}"
+                    f"（配置地址 {mineru_configured or '未设置'}）"
+                )
         prior_art_config = runtime["services"]["prior_art"]
         if prior_art_config["mode"] == "local":
             prior_art_result = LocalCnipaPriorArtAdapter().health()
@@ -324,7 +347,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "name": "mineru",
                     "status": mineru_result.status,
-                    "message": mineru_result.message,
+                    "message": mineru_message,
+                    "detail": {
+                        "configured_url": mineru_configured,
+                        "resolved_url": mineru_resolved,
+                        "used_discovered": bool(
+                            mineru_resolved and mineru_resolved != mineru_configured
+                        ),
+                    },
                 },
                 {
                     "name": "patent",

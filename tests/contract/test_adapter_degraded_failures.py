@@ -54,7 +54,7 @@ def test_mineru_api_status_exposes_404_as_recoverable_metadata(monkeypatch) -> N
         raise httpx.HTTPStatusError("not found", request=request, response=response)
 
     adapter = MinerUApiAdapter()
-    monkeypatch.setattr(adapter, "_get", raise_404)
+    monkeypatch.setattr(adapter, "_get_data", raise_404)
 
     result = adapter.status("missing")
 

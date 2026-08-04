@@ -4263,10 +4263,16 @@ function evidenceKind(item) {
 function adapterHealthCard(adapter) {
   const status = adapterStatus(adapter);
   const ok = adapterHealthy(adapter);
+  const label = adapterLabel(adapter);
+  const detail = adapter.detail || {};
+  const resolved = detail.resolved_url;
+  const detailText = resolved
+    ? ` · ${detail.used_discovered ? "自动发现连接 " : "连接 "}${resolved}`
+    : "";
   return html`
     <div class="gate-item ${ok ? "pass" : "warn"}">
       <span class="gate-icon">${ok ? "✓" : "!"}</span>
-      <div><strong>${adapter.name || adapter.adapter || adapter.service || "adapter"}</strong><p class="meta">${status} ${adapter.message || adapter.error || adapter.version || ""}</p></div>
+      <div><strong>${label}</strong><p class="meta">${status} ${adapter.message || adapter.error || adapter.version || ""}${detailText}</p></div>
     </div>
   `;
 }
