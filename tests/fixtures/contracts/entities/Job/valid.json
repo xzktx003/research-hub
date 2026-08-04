@@ -1,0 +1,19 @@
+{
+  "id": "job-contract-parse",
+  "kind": "parse",
+  "status": "succeeded",
+  "target_type": "paper_version",
+  "target_id": "pver-contract-ordinary-v1",
+  "idempotency_key": "parse-contract-ordinary",
+  "external_task_id": null,
+  "request": {
+    "force": false
+  },
+  "result": {
+    "artifact_ids": ["artifact-contract-markdown"]
+  },
+  "error": {},
+  "next_poll_after": null,
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

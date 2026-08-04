@@ -1,0 +1,72 @@
+{
+  "parsing_expected": {
+    "sections": ["intro", "method", "experiments"],
+    "formulas": ["eq-1", "eq-2"],
+    "tables": ["table-1"],
+    "images": ["figure-1"]
+  },
+  "parsing_observed": {
+    "sections": ["intro", "method", "experiments"],
+    "formulas": ["eq-1", "eq-2"],
+    "tables": ["table-1"],
+    "images": ["figure-1"]
+  },
+  "source_markdown": "KV cache is controlled by $p_t = f(x_t)$ and evaluated in [1].",
+  "translated_markdown": "键值缓存由 $p_t = f(x_t)$ 控制，并在 [1] 中评估。",
+  "glossary": {"KV cache": "键值缓存"},
+  "bilingual_blocks": [
+    {
+      "source_block_id": "method-1",
+      "original": "KV cache is controlled by $p_t = f(x_t)$.",
+      "translation": "键值缓存由 $p_t = f(x_t)$ 控制。"
+    }
+  ],
+  "report": {
+    "summary": "结论",
+    "motivation": "动机",
+    "method": "方法",
+    "experiments": "实验",
+    "results": "结果",
+    "innovation": "创新",
+    "limitations": "局限",
+    "engineering_value": "工程价值",
+    "reproduction_plan": "复现路线",
+    "evidence": [
+      {"report_field": "summary", "section": "abstract"},
+      {"report_field": "motivation", "page": 1},
+      {"report_field": "method", "page": 3},
+      {"report_field": "experiments", "page": 6},
+      {"report_field": "results", "page": 7},
+      {"report_field": "innovation", "section": "method"},
+      {"report_field": "limitations", "section": "limitations"},
+      {"report_field": "engineering_value", "source": "artifact:report"},
+      {"report_field": "reproduction_plan", "source": "artifact:report"}
+    ]
+  },
+  "technology_claims": [
+    {
+      "contains_number": true,
+      "model": "Model-A",
+      "dataset": "Dataset-B",
+      "hardware": "GPU-C",
+      "metric": "TPOT",
+      "comparison": "baseline-D"
+    }
+  ],
+  "predicted_relations": ["paper-a|paper-b|complementary"],
+  "expected_relations": ["paper-a|paper-b|complementary"],
+  "unrelated_relations": ["paper-a|paper-c|similar"],
+  "prior_art_records": [
+    {
+      "url": "https://example.org/patents/CN123456A",
+      "bibliographic_match": true,
+      "analysis_basis": "abstract"
+    }
+  ],
+  "technical_fact_ids": ["fact-1", "fact-2"],
+  "claim_provenance": [
+    {"claim_id": "fact-1", "source": "paper:paper-a"},
+    {"claim_id": "fact-2", "source": "human:reviewer"}
+  ],
+  "draft_version_labels": ["案件A_20260802120000", "案件A_20260802123000"]
+}

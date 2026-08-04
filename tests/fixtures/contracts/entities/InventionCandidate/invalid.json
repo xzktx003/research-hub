@@ -1,0 +1,17 @@
+{
+  "id": "candidate-contract-missing-title",
+  "status": "approved",
+  "sources": [
+    {
+      "paper_id": "paper-contract-ordinary",
+      "paper_version_id": "pver-contract-ordinary-v1",
+      "contribution": "Phase-aware request scheduling."
+    }
+  ],
+  "problem_statement": "Missing title is invalid for persisted candidates.",
+  "integration_mechanism": "A single-source candidate is also below the creation contract.",
+  "technical_effects": "",
+  "risk_notes": "",
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

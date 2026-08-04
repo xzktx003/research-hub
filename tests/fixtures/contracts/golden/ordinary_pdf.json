@@ -1,0 +1,99 @@
+{
+  "baseline": "ordinary_pdf",
+  "description": "A normal PDF ingestion path with one parsed markdown artifact and one report.",
+  "papers": [
+    {
+      "id": "paper-golden-ordinary",
+      "canonical_title": "Runtime-Aware Scheduling for Long Context Inference",
+      "abstract": "A normal PDF with prose-heavy sections and limited structured extraction.",
+      "language": "en",
+      "first_publication_date": "2026-07-30",
+      "current_version_id": "pver-golden-ordinary-v1",
+      "status": "parsed",
+      "selected": true,
+      "metadata": {
+        "baseline": "ordinary_pdf"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_versions": [
+    {
+      "id": "pver-golden-ordinary-v1",
+      "paper_id": "paper-golden-ordinary",
+      "version_label": "v1",
+      "source": "arxiv",
+      "source_version_id": "2507.12345v1",
+      "publication_date": "2026-07-30",
+      "pdf_url": "https://example.test/papers/ordinary.pdf",
+      "pdf_checksum": "sha256:goldenordinarypdf",
+      "metadata": {
+        "page_count": 12
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-golden-ordinary-pdf",
+      "paper_version_id": "pver-golden-ordinary-v1",
+      "patent_draft_id": null,
+      "artifact_type": "raw_pdf",
+      "uri": "file:///contracts/golden/ordinary.pdf",
+      "media_type": "application/pdf",
+      "checksum": "sha256:goldenordinarypdf",
+      "metadata": {
+        "page_count": 12
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-ordinary-md",
+      "paper_version_id": "pver-golden-ordinary-v1",
+      "patent_draft_id": null,
+      "artifact_type": "mineru_markdown",
+      "uri": "file:///contracts/golden/ordinary.md",
+      "media_type": "text/markdown",
+      "checksum": "sha256:goldenordinarymarkdown",
+      "metadata": {
+        "parser": "mineru",
+        "figure_count": 3,
+        "table_count": 1
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_reports": [
+    {
+      "id": "report-golden-ordinary",
+      "paper_version_id": "pver-golden-ordinary-v1",
+      "summary": "The paper proposes runtime-aware scheduling for long context inference.",
+      "motivation": "Long prompts create uneven phase pressure.",
+      "method": "Separate prefill/decode queues and route by runtime state.",
+      "experiments": "Synthetic workload replay.",
+      "results": "Improved latency structure in the fixture baseline.",
+      "innovation": "Connects phase scheduling to cache placement.",
+      "limitations": "Baseline fixture does not assert benchmark truth.",
+      "engineering_value": "Relevant to serving runtime design.",
+      "reproduction_plan": "Replay mixed prompt lengths and inspect queue metrics.",
+      "score": {
+        "engineering": 4
+      },
+      "evidence": [
+        {
+          "kind": "fact",
+          "source": "artifact-golden-ordinary-md",
+          "note": "The markdown contains a runtime scheduling method section.",
+          "section": "3",
+          "page": 5
+        }
+      ],
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "invention_candidates": [],
+  "patent_drafts": []
+}

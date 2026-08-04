@@ -1,0 +1,36 @@
+{
+  "id": "candidate-contract-two-paper",
+  "title": "Phase-Aware Cache Migration for Long Context Inference",
+  "status": "approved",
+  "sources": [
+    {
+      "paper_id": "paper-contract-ordinary",
+      "paper_version_id": "pver-contract-ordinary-v1",
+      "technical_card_id": "card-runtime-scheduling",
+      "contribution": "Phase-aware request scheduling."
+    },
+    {
+      "paper_id": "paper-contract-formula",
+      "paper_version_id": "pver-contract-formula-v1",
+      "technical_card_id": "card-cache-model",
+      "contribution": "Cache pressure model derived from formula and table extraction."
+    }
+  ],
+  "problem_statement": "Long-context inference needs coordinated scheduling and cache migration.",
+  "integration_mechanism": "Use phase state and extracted cache pressure signals to migrate KV blocks before decode congestion.",
+  "technical_effects": "Potentially lowers tail latency and memory bandwidth spikes.",
+  "risk_notes": "Requires prior-art review before legal filing.",
+  "evidence": [
+    {
+      "kind": "hypothesis",
+      "source": "contract-golden",
+      "note": "Combination is a technical hypothesis for disclosure drafting."
+    }
+  ],
+  "gate": {
+    "status": "ok",
+    "reasons": []
+  },
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

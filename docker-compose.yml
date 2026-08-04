@@ -1,0 +1,95 @@
+services:
+  research-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-infra-research-hub:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RESEARCH_HUB_HOST: 0.0.0.0
+      RESEARCH_HUB_PORT: 8080
+      RESEARCH_HUB_DB: /data/research_hub.sqlite3
+      RESEARCH_HUB_RUNTIME_CONFIG: /data/runtime_config.json
+      RESEARCH_HUB_POSTGRES_DSN: ${RESEARCH_HUB_POSTGRES_DSN:-}
+      RESEARCH_HUB_STATIC_DIR: /app/web
+      RESEARCH_HUB_PUBLIC: "true"
+      RESEARCH_HUB_EXPORT_DIR: /app/exports
+      PATENT_DISCLOSURE_ROOT: /app/patent-disclosure-skill
+      RESEARCH_HUB_ARTIFACT_ROOT: /app/artifacts
+      RESEARCH_HUB_TIMEZONE: Asia/Shanghai
+      RESEARCH_HUB_DAILY_HOUR: 9
+      RESEARCH_HUB_DISCOVERY_LOOKBACK_DAYS: 7
+    ports:
+      - "${RESEARCH_HUB_PUBLIC_PORT:-8310}:8080"
+    volumes:
+      - research-hub-data:/data
+      - ./exports:/app/exports
+      - ./artifacts:/app/artifacts
+      - ../patent-disclosure-skill:/app/patent-disclosure-skill:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)); raise SystemExit(0 if data.get('status') == 'ok' else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  research-worker:
+    image: ai-infra-research-hub:local
+    depends_on:
+      research-hub:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RESEARCH_HUB_DB: /data/research_hub.sqlite3
+      RESEARCH_HUB_RUNTIME_CONFIG: /data/runtime_config.json
+      RESEARCH_HUB_POSTGRES_DSN: ${RESEARCH_HUB_POSTGRES_DSN:-}
+      RESEARCH_HUB_ARTIFACT_ROOT: /app/artifacts
+      RESEARCH_HUB_EXPORT_DIR: /app/exports
+      PATENT_DISCLOSURE_ROOT: /app/patent-disclosure-skill
+      RESEARCH_HUB_TIMEZONE: Asia/Shanghai
+      RESEARCH_HUB_DAILY_HOUR: 9
+      RESEARCH_HUB_DISCOVERY_LOOKBACK_DAYS: 7
+    volumes:
+      - research-hub-data:/data
+      - ./exports:/app/exports
+      - ./artifacts:/app/artifacts
+      - ../patent-disclosure-skill:/app/patent-disclosure-skill:ro
+    command: ["python", "scripts/scheduler.py", "worker", "--interval", "30"]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-research_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-research_hub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    ports:
+      - "${RESEARCH_HUB_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - research-hub-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  research-hub-data:
+  research-hub-postgres-data:

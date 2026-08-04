@@ -1,0 +1,98 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/PaperVersion.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "paper_id": {
+      "title": "Paper Id",
+      "type": "string"
+    },
+    "pdf_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pdf Checksum"
+    },
+    "pdf_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pdf Url"
+    },
+    "publication_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publication Date"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "source_version_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Version Id"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    },
+    "version_label": {
+      "title": "Version Label",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "paper_id",
+    "version_label",
+    "source",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PaperVersion",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

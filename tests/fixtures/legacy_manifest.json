@@ -1,0 +1,26 @@
+{
+  "date": "2026-08-02",
+  "source": "mineru_daily_pdf",
+  "papers": [
+    {
+      "title": "Disaggregated Prefill and Decode Serving for Long Context Models",
+      "arxiv_id": "2608.00001",
+      "version_id": "2608.00001v1",
+      "pdf_path": "papers/disaggregated-serving.pdf",
+      "markdown_path": "markdown/disaggregated-serving.md",
+      "summary_path": "summaries/disaggregated-serving.zh.md",
+      "topics": ["aif-04", "aif-08"],
+      "checksum": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "title": "KV Cache Quantization for Efficient LLM Inference",
+      "arxiv_id": "2608.00002",
+      "version_id": "2608.00002v1",
+      "pdf_path": "papers/kv-cache-quantization.pdf",
+      "markdown_path": "markdown/kv-cache-quantization.md",
+      "summary_path": "summaries/kv-cache-quantization.zh.md",
+      "topics": ["aif-02", "aif-04"],
+      "checksum": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ]
+}

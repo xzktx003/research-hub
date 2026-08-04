@@ -1,0 +1,25 @@
+{
+  "run_date": "2026-08-01",
+  "papers": [
+    {
+      "title": "Speculative Decode Scheduling for AI Infrastructure",
+      "arxiv_id": "2608.10001",
+      "version_id": "2608.10001v1",
+      "pdf_path": "papers/speculative-decode.pdf",
+      "markdown_path": "markdown/speculative-decode.md",
+      "summary_path": "summaries/speculative-decode.zh.md",
+      "topics": ["aif-03", "aif-04"],
+      "first_public_date": "2026-08-01"
+    },
+    {
+      "title": "Paged KV Cache Validation",
+      "arxiv_id": "2608.10002",
+      "version_id": "2608.10002v1",
+      "pdf_path": "papers/paged-kv.pdf",
+      "markdown_path": "markdown/paged-kv.md",
+      "summary_path": "summaries/paged-kv.zh.md",
+      "topics": ["aif-04", "aif-08"],
+      "first_public_date": "2026-08-01"
+    }
+  ]
+}

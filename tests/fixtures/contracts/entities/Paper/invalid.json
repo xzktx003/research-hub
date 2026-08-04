@@ -1,0 +1,9 @@
+{
+  "id": "paper-contract-missing-title",
+  "abstract": "Missing canonical_title must fail the required-field contract.",
+  "language": "en",
+  "status": "discovered",
+  "selected": true,
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

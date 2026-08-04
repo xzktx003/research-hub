@@ -1,0 +1,9 @@
+{
+  "kind": "analysis",
+  "source": "paper-contract-ordinary",
+  "note": "The report connects runtime scheduling to cache pressure.",
+  "section": "3.2",
+  "page": 6,
+  "quote": "phase-aware queueing",
+  "quote_hash": "sha256:evidenceanchor"
+}

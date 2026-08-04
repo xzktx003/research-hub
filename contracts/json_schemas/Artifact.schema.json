@@ -1,0 +1,81 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/Artifact.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "artifact_type": {
+      "title": "Artifact Type",
+      "type": "string"
+    },
+    "checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checksum"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "media_type": {
+      "title": "Media Type",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "paper_version_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Paper Version Id"
+    },
+    "patent_draft_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Patent Draft Id"
+    },
+    "uri": {
+      "title": "Uri",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "artifact_type",
+    "uri",
+    "media_type",
+    "created_at"
+  ],
+  "title": "Artifact",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

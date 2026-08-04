@@ -1,0 +1,220 @@
+{
+  "baseline": "two_paper_patent_candidate",
+  "description": "Two paper reports combine into one approved invention candidate and one generated patent draft.",
+  "papers": [
+    {
+      "id": "paper-golden-combo-runtime",
+      "canonical_title": "Runtime-Aware Scheduling for Long Context Inference",
+      "abstract": "Runtime phase scheduling for long-context serving.",
+      "language": "en",
+      "first_publication_date": "2026-07-30",
+      "current_version_id": "pver-golden-combo-runtime-v1",
+      "status": "analyzed",
+      "selected": true,
+      "metadata": {
+        "baseline": "two_paper_patent_candidate"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "paper-golden-combo-cache",
+      "canonical_title": "Analytical Cache Pressure Models for Transformer Serving",
+      "abstract": "Cache pressure modeling for transformer serving.",
+      "language": "en",
+      "first_publication_date": "2026-07-31",
+      "current_version_id": "pver-golden-combo-cache-v1",
+      "status": "analyzed",
+      "selected": true,
+      "metadata": {
+        "baseline": "two_paper_patent_candidate"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_versions": [
+    {
+      "id": "pver-golden-combo-runtime-v1",
+      "paper_id": "paper-golden-combo-runtime",
+      "version_label": "v1",
+      "source": "arxiv",
+      "source_version_id": "2507.12345v1",
+      "publication_date": "2026-07-30",
+      "pdf_url": "https://example.test/papers/runtime.pdf",
+      "pdf_checksum": "sha256:goldencomboruntime",
+      "metadata": {},
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "pver-golden-combo-cache-v1",
+      "paper_id": "paper-golden-combo-cache",
+      "version_label": "v1",
+      "source": "publisher",
+      "source_version_id": "cache-model-v1",
+      "publication_date": "2026-07-31",
+      "pdf_url": "https://example.test/papers/cache.pdf",
+      "pdf_checksum": "sha256:goldencombocache",
+      "metadata": {},
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-golden-combo-runtime-pdf",
+      "paper_version_id": "pver-golden-combo-runtime-v1",
+      "patent_draft_id": null,
+      "artifact_type": "raw_pdf",
+      "uri": "file:///contracts/golden/runtime.pdf",
+      "media_type": "application/pdf",
+      "checksum": "sha256:goldencomboruntime",
+      "metadata": {},
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-combo-cache-pdf",
+      "paper_version_id": "pver-golden-combo-cache-v1",
+      "patent_draft_id": null,
+      "artifact_type": "raw_pdf",
+      "uri": "file:///contracts/golden/cache.pdf",
+      "media_type": "application/pdf",
+      "checksum": "sha256:goldencombocache",
+      "metadata": {},
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-combo-runtime-report",
+      "paper_version_id": "pver-golden-combo-runtime-v1",
+      "patent_draft_id": null,
+      "artifact_type": "paper_report_markdown",
+      "uri": "file:///contracts/golden/runtime-report.md",
+      "media_type": "text/markdown",
+      "checksum": "sha256:goldencomboruntimereport",
+      "metadata": {
+        "report_id": "report-golden-combo-runtime"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-combo-draft-md",
+      "paper_version_id": null,
+      "patent_draft_id": "draft-golden-combo",
+      "artifact_type": "patent_disclosure_markdown",
+      "uri": "file:///contracts/golden/phase-aware-cache-migration.md",
+      "media_type": "text/markdown",
+      "checksum": "sha256:goldencombodraft",
+      "metadata": {
+        "candidate_id": "candidate-golden-combo"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_reports": [
+    {
+      "id": "report-golden-combo-runtime",
+      "paper_version_id": "pver-golden-combo-runtime-v1",
+      "summary": "Runtime scheduling paper contributes phase-aware queue control.",
+      "motivation": "Prefill and decode have different pressure profiles.",
+      "method": "Route requests by phase state.",
+      "experiments": "Mixed workload replay.",
+      "results": "Tail latency trend improves in the fixture.",
+      "innovation": "Phase-aware runtime control.",
+      "limitations": "Needs deployment validation.",
+      "engineering_value": "Provides one source contribution for candidate mining.",
+      "reproduction_plan": "Replay mixed workloads.",
+      "score": {
+        "engineering": 4
+      },
+      "evidence": [
+        {
+          "kind": "fact",
+          "source": "paper-golden-combo-runtime",
+          "note": "Phase-aware queue control."
+        }
+      ],
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "report-golden-combo-cache",
+      "paper_version_id": "pver-golden-combo-cache-v1",
+      "summary": "Cache modeling paper contributes pressure signals.",
+      "motivation": "KV cache placement needs workload-sensitive signals.",
+      "method": "Estimate cache pressure from analytical model outputs.",
+      "experiments": "Serving regime comparison.",
+      "results": "Pressure signals classify memory-sensitive phases.",
+      "innovation": "Structured cache pressure model.",
+      "limitations": "Parser quality affects dense extraction.",
+      "engineering_value": "Provides a second source contribution for candidate mining.",
+      "reproduction_plan": "Compare model outputs to extracted tables.",
+      "score": {
+        "engineering": 4
+      },
+      "evidence": [
+        {
+          "kind": "analysis",
+          "source": "paper-golden-combo-cache",
+          "note": "Cache pressure signal for migration timing."
+        }
+      ],
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "invention_candidates": [
+    {
+      "id": "candidate-golden-combo",
+      "title": "Phase-Aware Cache Migration for Long Context Inference",
+      "status": "approved",
+      "sources": [
+        {
+          "paper_id": "paper-golden-combo-runtime",
+          "paper_version_id": "pver-golden-combo-runtime-v1",
+          "technical_card_id": "card-runtime-phase",
+          "contribution": "Phase-aware queue control."
+        },
+        {
+          "paper_id": "paper-golden-combo-cache",
+          "paper_version_id": "pver-golden-combo-cache-v1",
+          "technical_card_id": "card-cache-pressure",
+          "contribution": "Cache pressure signal for migration timing."
+        }
+      ],
+      "problem_statement": "Long-context inference needs coordinated request phase scheduling and cache migration.",
+      "integration_mechanism": "Combine phase-aware scheduling with cache pressure signals to migrate KV blocks before decode congestion.",
+      "technical_effects": "Potentially lowers tail latency and bandwidth spikes.",
+      "risk_notes": "Requires human prior-art review.",
+      "evidence": [
+        {
+          "kind": "hypothesis",
+          "source": "report-golden-combo-runtime",
+          "note": "Combination hypothesis from two report contributions."
+        }
+      ],
+      "gate": {
+        "status": "ok",
+        "reasons": []
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "patent_drafts": [
+    {
+      "id": "draft-golden-combo",
+      "invention_candidate_id": "candidate-golden-combo",
+      "case_name": "Phase-Aware Cache Migration",
+      "version_label": "v-00000001",
+      "status": "generated",
+      "markdown": "# Phase-Aware Cache Migration\n\n技术交底书草稿，不构成法律意义上的新颖性、创造性或授权结论。",
+      "self_check": {
+        "legal_notice": "技术交底书草稿，不构成法律意义上的新颖性、创造性或授权结论。",
+        "candidate_id": "candidate-golden-combo"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ]
+}

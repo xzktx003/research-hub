@@ -1,0 +1,5 @@
+{
+  "kind": "opinion",
+  "source": "paper-contract-ordinary",
+  "note": "Unsupported evidence kind must fail."
+}

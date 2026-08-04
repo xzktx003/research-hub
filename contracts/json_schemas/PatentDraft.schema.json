@@ -1,0 +1,60 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/PatentDraft.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "case_name": {
+      "title": "Case Name",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "invention_candidate_id": {
+      "title": "Invention Candidate Id",
+      "type": "string"
+    },
+    "markdown": {
+      "title": "Markdown",
+      "type": "string"
+    },
+    "self_check": {
+      "additionalProperties": true,
+      "title": "Self Check",
+      "type": "object"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    },
+    "version_label": {
+      "title": "Version Label",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "invention_candidate_id",
+    "case_name",
+    "version_label",
+    "status",
+    "markdown",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PatentDraft",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

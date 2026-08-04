@@ -1,0 +1,16 @@
+{
+  "id": "paper-contract-ordinary",
+  "canonical_title": "Runtime-Aware Scheduling for Long Context Inference",
+  "abstract": "A compact contract fixture for a normal PDF ingestion path.",
+  "language": "en",
+  "first_publication_date": "2026-07-30",
+  "current_version_id": "pver-contract-ordinary-v1",
+  "status": "discovered",
+  "selected": true,
+  "metadata": {
+    "source": "contract-fixture",
+    "topics": ["inference-serving"]
+  },
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

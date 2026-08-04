@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'none'">
+    <title>AI Infra Research Hub</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主内容</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">AI</span>
+          <div>
+            <strong>Research Hub</strong>
+            <span>论文研读与专利转化</span>
+          </div>
+        </div>
+        <nav class="nav-list" id="navList">
+          <button class="nav-item active" data-view="dashboard" type="button">仪表盘</button>
+          <button class="nav-item" data-view="papers" type="button">论文库</button>
+          <button class="nav-item" data-view="reader" type="button">阅读台</button>
+          <button class="nav-item" data-view="topics" type="button">主题中心</button>
+          <button class="nav-item" data-view="workflows" type="button">工作流</button>
+          <button class="nav-item" data-view="jobs" type="button">任务中心</button>
+          <button class="nav-item" data-view="relations" type="button">关系视图</button>
+          <button class="nav-item" data-view="patents" type="button">专利候选</button>
+          <button class="nav-item" data-view="notebook" type="button">笔记本</button>
+          <button class="nav-item" data-view="settings" type="button">设置</button>
+        </nav>
+        <section class="api-panel" aria-labelledby="apiPanelTitle">
+          <h2 id="apiPanelTitle">API 状态</h2>
+          <div id="apiStatusCard" class="status-card is-loading">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <strong>连接中</strong>
+              <span>正在探测 /api/v1</span>
+            </div>
+          </div>
+          <button class="secondary full" id="refreshButton" type="button">刷新数据</button>
+        </section>
+      </aside>
+
+      <main id="main" class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">AI Infra Daily Intelligence</p>
+            <h1 id="viewTitle">仪表盘</h1>
+          </div>
+          <div class="topbar-actions">
+            <label class="search-box">
+              <span>搜索</span>
+              <input id="globalSearch" type="search" placeholder="标题、作者、主题、arXiv ID">
+            </label>
+            <button class="secondary" id="helpButton" type="button">使用说明</button>
+            <button class="secondary" id="directedDiscoveryButton" type="button">定向发现</button>
+            <button class="primary" id="runDiscoveryButton" type="button">触发发现</button>
+          </div>
+        </header>
+
+        <section class="alert hidden" id="globalAlert" role="alert" aria-live="assertive"></section>
+        <section class="toast hidden" id="appToast" role="status" aria-live="polite"></section>
+
+        <section class="view active" id="view-dashboard" aria-labelledby="viewTitle">
+          <div class="metric-grid" id="metricGrid"></div>
+          <section class="panel metric-details hidden" id="metricDetails" aria-live="polite"></section>
+          <div class="split-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>今日论文</h2>
+                  <p>来自真实后端的每日发现结果。</p>
+                </div>
+                <span class="pill" id="todayLabel">今天</span>
+              </div>
+              <div class="daily-browse" aria-label="论文日期浏览">
+                <button class="secondary compact-action" type="button" id="dailyPrevDay" title="查看前一天">‹ 前一天</button>
+                <label class="search-box daily-date">
+                  <span>查看日期</span>
+                  <input id="dailyDateFilter" type="date">
+                  <button class="secondary compact-action" type="button" id="dailyJumpToday">今天</button>
+                </label>
+                <button class="secondary compact-action" type="button" id="dailyNextDay" title="查看后一天">后一天 ›</button>
+              </div>
+              <div id="dailyPapers" class="paper-list"></div>
+              <h3 class="daily-history-title">历史论文（<span id="historyDateLabel"></span>）</h3>
+              <div id="historyPapers" class="paper-list" aria-live="polite"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>流水线状态</h2>
+                  <p>发现、下载、解析、研读、专利生成。</p>
+                </div>
+              </div>
+              <div id="pipelineSummary" class="timeline"></div>
+            </section>
+          </div>
+          <div class="split-layout digest-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>来源与主题分布</h2>
+                  <p>统一日报中的来源命中、去重和主题覆盖。</p>
+                </div>
+              </div>
+              <div id="digestDistribution" class="compact-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>阅读路线</h2>
+                  <p>30 分钟、2 小时与半天分层阅读。</p>
+                </div>
+              </div>
+              <div id="readingRoutes" class="compact-list"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>系统能力健康</h2>
+                <p>展示论文发现、解析、研读和草稿生成能力的可用性摘要。</p>
+              </div>
+            </div>
+            <div id="adapterHealth" class="capability-list"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-papers" aria-labelledby="viewTitle">
+          <div class="toolbar">
+            <label>
+              主题
+              <select id="topicFilter">
+                <option value="">全部主题</option>
+              </select>
+            </label>
+            <label>
+              状态
+              <select id="statusFilter">
+                <option value="">全部状态</option>
+                <option value="discovered">已发现</option>
+                <option value="parsed">已解析</option>
+                <option value="analyzed">已研读</option>
+                <option value="failed">失败</option>
+              </select>
+            </label>
+            <label>
+              日期
+              <input id="dateFilter" type="date">
+            </label>
+          </div>
+          <div id="paperLibrary" class="library-grid"></div>
+        </section>
+
+        <section class="view" id="view-reader" aria-labelledby="viewTitle">
+          <div class="reader-layout">
+            <aside class="panel reader-index">
+              <div class="panel-heading">
+                <div>
+                  <h2>论文目录</h2>
+                  <p id="selectedPaperMeta">选择一篇论文查看详情。</p>
+                </div>
+              </div>
+              <div id="readerPaperList" class="compact-list"></div>
+            </aside>
+            <section class="panel document-pane">
+              <div class="tab-bar" role="tablist" aria-label="文档视图">
+                <button class="tab active" data-doc-tab="pdf" type="button">PDF</button>
+                <button class="tab" data-doc-tab="markdown" type="button">Markdown</button>
+                <button class="tab" data-doc-tab="report" type="button">研读报告</button>
+                <button class="tab" data-doc-tab="evidence" type="button">证据</button>
+              </div>
+              <div id="readerPaperSummary" class="reader-paper-summary hidden"></div>
+              <article id="documentContent" class="document-content"></article>
+            </section>
+            <aside class="panel insight-pane">
+              <div class="panel-heading">
+                <div>
+                  <h2>技术卡片</h2>
+                  <p>问题、方法、指标与专利候选入口。</p>
+                </div>
+              </div>
+              <div id="technicalCards" class="tech-card-list"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-topics" aria-labelledby="viewTitle">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>AI Infra 主题树</h2>
+                <p>主题配置由后端提供；可在此新增自定义主题。</p>
+              </div>
+            </div>
+            <div class="add-topic-form">
+              <h3>新增主题</h3>
+              <div class="config-form-grid">
+                <label>
+                  中文名称
+                  <input id="newTopicZhInput" type="text" autocomplete="off" placeholder="例如：多模态推理">
+                </label>
+                <label>
+                  英文名称
+                  <input id="newTopicEnInput" type="text" autocomplete="off" placeholder="例如：Multimodal Reasoning">
+                </label>
+                <label>
+                  关键词（逗号分隔）
+                  <input id="newTopicAliasesInput" type="text" autocomplete="off" placeholder="例如：VLM, multimodal, reasoning">
+                </label>
+                <label>
+                  每日配额
+                  <input id="newTopicQuotaInput" type="number" min="1" max="500" value="5">
+                </label>
+              </div>
+              <button class="primary" id="addTopicButton" type="button">添加主题</button>
+            </div>
+            <div id="topicTree" class="topic-grid"></div>
+            <div id="topicDigestPanel" class="draft-section"></div>
+          </div>
+        </section>
+
+        <section class="view" id="view-jobs" aria-labelledby="viewTitle">
+          <div class="panel">
+            <div class="panel-heading job-panel-heading">
+              <div>
+                <h2>任务中心</h2>
+                <p>异步任务状态、错误原因和重试入口。进入本页会自动刷新进展。</p>
+              </div>
+              <span class="jobs-poll-badge" id="jobsPollBadge">自动刷新中...</span>
+            </div>
+            <div id="jobList" class="job-table"></div>
+          </div>
+        </section>
+
+        <section class="view" id="view-workflows" aria-labelledby="viewTitle">
+          <div id="workflowCatalog" class="workflow-catalog"></div>
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>运行历史</h2>
+                <p>每次发现、服务器下载、解析和研读任务均通过同一个流水线 ID 追踪。</p>
+              </div>
+            </div>
+            <div id="workflowRuns" class="workflow-runs"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-relations" aria-labelledby="viewTitle">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>论文关系</h2>
+                <p>共同问题、互补方法、冲突约束和证据链。关系由系统基于共同主题与技术关键词自动计算。</p>
+              </div>
+              <div id="relationsHeader" class="relations-header"></div>
+            </div>
+            <div id="relationGraph" class="relation-grid"></div>
+          </div>
+        </section>
+
+        <section class="view" id="view-patents" aria-labelledby="viewTitle">
+          <div class="patent-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>候选输入</h2>
+                  <p>选择 2 到 5 篇论文或技术卡片后才能创建组合候选。</p>
+                </div>
+                <span class="pill" id="selectionCount">0 / 5</span>
+              </div>
+              <div id="candidatePicker" class="candidate-picker"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>组合门禁</h2>
+                  <p>防止把论文摘要机械拼接成专利草稿。</p>
+                </div>
+              </div>
+              <div class="compliance-note">
+                交底书仅为技术草稿和候选材料，不构成授权、新颖性或创造性的法律结论；提交前必须人工确认事实、引用和保护主线。
+              </div>
+              <div class="candidate-form-grid">
+                <label>
+                  组合耦合关系
+                  <textarea id="couplingInput" rows="3" placeholder="说明各论文机制之间的必要耦合，不接受仅并列罗列。"></textarea>
+                </label>
+                <label>
+                  接口边界
+                  <textarea id="interfaceInput" rows="3" placeholder="列出模块、输入输出、协议或状态交互边界。"></textarea>
+                </label>
+                <label>
+                  数据/控制流
+                  <textarea id="dataControlFlowInput" rows="3" placeholder="描述数据路径、控制决策、触发条件和反馈闭环。"></textarea>
+                </label>
+                <label>
+                  非并列说明
+                  <textarea id="nonParallelInput" rows="3" placeholder="说明为什么不是把多篇论文摘要机械拼接。"></textarea>
+                </label>
+                <label>
+                  联合效果
+                  <textarea id="jointEffectInput" rows="3" placeholder="说明组合后才出现或增强的技术效果及验证假设。"></textarea>
+                </label>
+
+              </div>
+              <div class="approval-checklist" aria-label="审批确认">
+                <label class="check-row">
+                  <input id="approvalFactsInput" type="checkbox">
+                  <span>已确认事实来源与证据引用</span>
+                </label>
+                <label class="check-row">
+                  <input id="approvalNoveltyInput" type="checkbox">
+                  <span>已确认查新/新颖性风险已记录</span>
+                </label>
+                <label class="check-row">
+                  <input id="approvalInventivenessInput" type="checkbox">
+                  <span>已确认创造性主线不是简单并列</span>
+                </label>
+                <label class="check-row">
+                  <input id="approvalScopeInput" type="checkbox">
+                  <span>已确认保护范围和许可边界需后续法务复核</span>
+                </label>
+              </div>
+              <div id="gateChecklist" class="gate-list"></div>
+              <label class="override-box">
+                主题/关系门禁 override note
+                <textarea id="topicOverrideInput" rows="3" placeholder="仅当没有共享 topic 且没有 complements/extends 关系时填写；说明为何仍可组合。"></textarea>
+              </label>
+              <button class="primary full" id="createCandidateButton" type="button" disabled>创建专利候选</button>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>草稿预览</h2>
+                  <p>来自后端候选或交底书接口。</p>
+                </div>
+                <div class="paper-actions">
+                  <button class="secondary" id="downloadDraftButton" type="button" disabled>下载 Markdown</button>
+                  <button class="secondary" id="downloadDraftDocxButton" type="button" disabled>下载 DOCX</button>
+                </div>
+              </div>
+              <article id="draftPreview" class="draft-preview"></article>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-notebook" aria-labelledby="viewTitle">
+          <div class="split-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>我的笔记本</h2>
+                  <p>已收藏的论文及其研读解读。点击论文标题展开查看详情。</p>
+                </div>
+                <span class="pill" id="notebookCount">0 篇</span>
+              </div>
+              <div id="notebookPaperList" class="paper-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>笔记本研读摘要</h2>
+                  <p>汇总笔记本中所有论文的研读报告和技术卡片。</p>
+                </div>
+              </div>
+              <div id="notebookDigest" class="compact-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings" aria-labelledby="viewTitle">
+          <div class="settings-grid">
+            <section class="panel settings-wide" id="analysisSettingsPanel">
+              <div class="panel-heading">
+                <div>
+                  <h2>论文研读模型</h2>
+                  <p>此处配置用于自动中文摘要和论文研读；API key 仅写入服务器权限受控配置，不保存在浏览器。保存后会立即补翻已有论文，并自动翻译后续新论文，无需重启。</p>
+                </div>
+              </div>
+              <div class="config-form-grid">
+                <label>
+                  提供方
+                  <select id="analysisProviderInput">
+                    <option value="openai">OpenAI 兼容 API</option>
+                    <option value="dify">Dify 工作流 API</option>
+                  </select>
+                </label>
+                <label>
+                  Base URL
+                  <input id="analysisBaseUrlInput" type="url" autocomplete="off" placeholder="例如 http://model-server:8000/v1">
+                </label>
+                <label id="analysisModelLabel">
+                  模型名
+                  <input id="analysisModelInput" type="text" autocomplete="off" placeholder="例如 Qwen3-32B">
+                </label>
+                <label id="analysisDifyWorkflowLabel" class="hidden">
+                  Dify 工作流 ID（可选）
+                  <input id="analysisDifyWorkflowIdInput" type="text" autocomplete="off" placeholder="标准 Dify /v1/workflows/run 无需填写">
+                </label>
+                <label>
+                  模型 / Dify API key
+                  <input id="analysisApiKeyInput" type="password" autocomplete="new-password" placeholder="Dify 填已发布工作流的 API 密钥；留空保留旧值">
+                </label>
+              </div>
+              <label class="check-row config-clear-key">
+                <input id="clearAnalysisApiKeyInput" type="checkbox">
+                <span>清除服务器已保存的模型 API key</span>
+              </label>
+              <button class="primary" id="saveAnalysisConfigButton" type="button">保存 LLM 配置</button>
+            </section>
+            <section class="panel settings-wide">
+              <div class="panel-heading">
+                <div>
+                  <h2>每日自动研读</h2>
+                  <p>发现后自动用上述 LLM 翻译英文摘要；PDF 下载、解析与研读继续异步执行，全文翻译可选。</p>
+                </div>
+              </div>
+              <div class="config-form-grid">
+                <label class="check-row">
+                  <input id="scheduleEnabledInput" type="checkbox">
+                  <span>启用每日定时任务</span>
+                </label>
+                <label>
+                  时区
+                  <input id="scheduleTimezoneInput" type="text" autocomplete="off" placeholder="Asia/Shanghai">
+                </label>
+                <label>
+                  每日执行小时（0–23）
+                  <input id="scheduleHourInput" type="number" min="0" max="23">
+                </label>
+                <label>
+                  回看天数
+                  <input id="scheduleLookbackInput" type="number" min="1" max="30">
+                </label>
+                <label>
+                  每主题最多论文数
+                  <input id="scheduleMaxResultsInput" type="number" min="1" max="100">
+                </label>
+                <label class="check-row">
+                  <input id="scheduleTranslateInput" type="checkbox">
+                  <span>解析后同时生成中文翻译</span>
+                </label>
+              </div>
+              <button class="primary" id="saveScheduleConfigButton" type="button">保存自动研读配置</button>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>系统托管服务</h2>
+                  <p>非大模型 API 由服务器管理，普通用户无需填写。</p>
+                </div>
+              </div>
+              <dl class="kv-list" id="managedServiceList"></dl>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>平台接口</h2>
+                  <p>站点同源提供 /api/v1 接口，局域网内读写操作无需额外凭证。</p>
+                </div>
+              </div>
+              <dl class="kv-list" id="endpointList"></dl>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>能力探测</h2>
+                  <p>不可用能力会被标记为降级，不会显示为成功。</p>
+                </div>
+              </div>
+              <div id="capabilityList" class="capability-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>适配器健康</h2>
+                  <p>后端可通过 /adapter-health 或 /integrations/health 提供。</p>
+                </div>
+              </div>
+              <div id="settingsAdapterHealth" class="capability-list"></div>
+            </section>
+            <section class="panel settings-wide">
+              <div class="panel-heading">
+                <div>
+                  <h2>主题展示条数</h2>
+                  <p>每个主题下「今日论文」最多展示的论文数量。改完点保存即生效。</p>
+                </div>
+              </div>
+              <div class="topic-quota-grid" id="topicQuotaGrid"></div>
+              <button class="primary" id="saveTopicQuotaButton" type="button">保存主题条数</button>
+            </section>
+            <section class="panel settings-wide">
+              <div class="panel-heading">
+                <div>
+                  <h2>显示设置</h2>
+                  <p>调整界面文字大小。选择后即时生效并保存在本机浏览器（localStorage），下次打开自动沿用。</p>
+                </div>
+              </div>
+              <div class="config-form-grid">
+                <label>
+                  文字大小
+                  <select id="fontSizeInput" autocomplete="off">
+                    <option value="0.85">较小</option>
+                    <option value="1">标准</option>
+                    <option value="1.1">较大</option>
+                    <option value="1.25">更大</option>
+                  </select>
+                </label>
+              </div>
+              <button class="primary" id="saveFontSizeButton" type="button">保存显示设置</button>
+              <span class="font-save-hint" id="fontSaveHint"></span>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 使用说明弹层 -->
+    <div class="overlay hidden" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="overlay-panel help-panel">
+        <div class="overlay-head">
+          <h2 id="helpTitle">使用说明</h2>
+          <button class="secondary compact-action" type="button" id="helpCloseButton">关闭</button>
+        </div>
+        <div id="helpContent" class="help-content"></div>
+      </div>
+    </div>
+
+    <!-- 定向发现弹层 -->
+    <div class="overlay hidden" id="directedDiscoveryOverlay" role="dialog" aria-modal="true" aria-labelledby="directedTitle">
+      <div class="overlay-panel">
+        <div class="overlay-head">
+          <h2 id="directedTitle">定向发现</h2>
+          <button class="secondary compact-action" type="button" id="directedCloseButton">取消</button>
+        </div>
+        <form id="directedForm" class="directed-form">
+          <label>
+            研究方向（主题）
+            <select id="directedTopic" multiple size="8"></select>
+            <span class="meta">按住 Ctrl/Cmd 可多选；留空表示全部启用主题。</span>
+          </label>
+          <div class="directed-row">
+            <label>
+              起始日期
+              <input id="directedStartDate" type="date">
+            </label>
+            <label>
+              结束日期
+              <input id="directedEndDate" type="date">
+            </label>
+          </div>
+          <label>
+            每主题最多论文数
+            <input id="directedMaxResults" type="number" min="1" max="500" value="20">
+          </label>
+          <label class="check-label">
+            <input id="directedAutoProcess" type="checkbox" checked>
+            自动后续处理（下载 → 解析 → 研读 → 翻译）
+          </label>
+          <div class="overlay-actions">
+            <button class="primary" type="submit" id="directedSubmitButton">开始发现</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20260804n" defer></script>
+  </body>
+</html>

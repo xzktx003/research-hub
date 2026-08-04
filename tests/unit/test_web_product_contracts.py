@@ -1,0 +1,686 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_dashboard_metrics_expand_real_daily_digest_details() -> None:
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="metricDetails"' in index
+    assert 'data-metric-key="${key}"' in app
+    assert "state.digest?.details?.[key]" in app
+    assert 'data-metric-paper="${entry.id}"' in app
+
+
+def test_notebook_uses_server_persistence_instead_of_session_storage() -> None:
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert 'notebook: ["/papers?selected=true"]' in app
+    assert '/papers/${encodeURIComponent(paperId)}/select' in app
+    assert "researchHubNotebook" not in app
+    assert "state.notebookItems" in app
+
+
+def test_settings_explain_llm_and_dify_api_keys() -> None:
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert "用于自动中文摘要和论文研读" in index
+    assert "Dify 工作流 ID（可选）" in index
+    assert "Dify 填已发布工作流的 API 密钥" in index
+    assert "无需重启" in index
+    assert 'id="saveAnalysisConfigButton"' in index
+    assert "保存 LLM 配置" in index
+    assert 'id="saveScheduleConfigButton"' in index
+    assert "saveRuntimeConfig(analysisConfigPayload(), \"analysis\")" in app
+    assert "saveRuntimeConfig(scheduleConfigPayload(), \"schedule\")" in app
+    assert "平台接口" in index
+    assert "局域网内读写操作无需额外凭证" in index
+    assert "公网管理凭证" not in index
+    assert "平台管理 API key" not in app
+    assert "state.runtimeConfig?.env_backfilled" in app
+    assert "当前来自 .env；点「保存 LLM 配置」后可编辑" in app
+
+
+def test_daily_papers_use_chinese_abstract_as_primary_content() -> None:
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert 'paper.translated_abstract ? "中文摘要" : "中文摘要待生成"' in app
+    assert "中文摘要尚未生成" in app
+    assert "查看英文原摘要" in app
+
+
+def test_paper_card_shows_one_line_method_summary() -> None:
+    """Each paper's abstract section must be prefixed by an optional one-line
+    Chinese method summary (method_summary) that explains what method solves
+    what problem, without breaking when the summary is absent."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # The one-liner is rendered right above the Chinese abstract in the library.
+    assert "一句话摘要" in app
+    assert "paper.method_summary ?" in app
+    assert "paper-one-liner" in app
+    # Notebook cards and the reader meta carry it too.
+    assert "paper-one-liner" in app
+    assert "reader-one-liner" in app
+    # Styling lives in a CSS class (strict CSP: no inline styles).
+    assert ".paper-one-liner" in styles
+    assert ".reader-one-liner" in styles
+
+
+def test_transient_alerts_auto_dismiss_and_are_dismissible() -> None:
+    """Transient notifications (e.g. '主题已删除') must auto-dismiss quickly and
+    expose a close button, while the persistent endpoint-degradation banner is
+    exempt so it stays until endpoints recover. The transient toast lives in a
+    dedicated element so page re-renders don't wipe it mid-view."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Transient toast auto-dismisses after a short (seconds) timeout — not a
+    # full minute, which lingered across views.
+    assert "4 * 1000" in app
+    assert "setTimeout" in app
+    assert "clearTimeout" in app
+    # It has a dismiss button that removes the notification.
+    assert ".alert-dismiss" in app
+    assert 'className = "alert-dismiss"' in app
+    assert "aria-label" in app
+    assert "关闭通知" in app
+    # The degradation banner must not be auto-dismissed mid-flight.
+    assert 'alert.dataset.degraded' in app
+    assert 'alert.dataset.degraded = "true"' in app
+    # Transient feedback uses a dedicated #appToast element so a re-render
+    # (which calls renderGlobalAlert) can't overwrite it.
+    assert "appToast" in app
+    # Dismiss styling is a CSS class (strict CSP: no inline styles).
+    assert ".alert-dismiss" in styles
+    assert ".toast" in styles
+
+
+def test_reader_is_an_enter_state_that_does_not_auto_open_a_paper() -> None:
+    """The reader (阅读台) is an 'enter reading page' state. Entering it via the
+    nav must NOT auto-select the first paper and auto-load its PDF (which some
+    browsers download). A paper is only opened when the user explicitly chooses
+    one or the route names a specific paper."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    # On load, do not silently fall back to the first paper.
+    assert "state.selectedPaperId = state.selectedPaperId || null;" in app
+    # renderReader does not force-select papers[0] when nothing is chosen.
+    assert "const selected = selectedPaper();" in app
+    assert "const workspace = selectedWorkspace();" in app
+    assert app.count("getPaperId(papers[0])") == 0
+    # The reader shows a 'choose a paper' placeholder when nothing is selected.
+    assert "选择论文后显示 PDF、Markdown、研读报告或证据。" in app
+    assert "选择论文后显示内容。" in app
+    # A paper still opens explicitly via openPaper / the {id}/read route.
+    assert "state.selectedPaperId = paperId;" in app
+    assert "segments[1] !== \"read\"" in app
+
+
+def test_relations_view_auto_loads_and_can_rebuild() -> None:
+    """The relationship view must fetch ALL relations (not just those lazily
+    loaded in workspaces), auto-load when opened, and offer a rebuild action."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Fetch all relations from a dedicated endpoint, not just loaded workspaces.
+    assert "apiJson(\"/relations\")" in app
+    assert "function loadRelations" in app
+    # Auto-refresh when entering the view.
+    assert "refreshRelationsOnView" in app
+    assert 'if (view === "relations" && !state.loading) refreshRelationsOnView();' in app
+    # A rebuild action posts to the rebuild endpoint then refetches.
+    assert "runRelationsRebuild" in app
+    assert "apiJson(\"/relations/rebuild\", { method: \"POST\" })" in app
+    assert "重建论文关系" in app or "自动重建/跑论文关系" in app
+    # View chrome supports the header/button (strict CSP: CSS classes only).
+    assert 'id="relationsHeader"' in index
+    assert ".relation-card-head" in styles
+    assert ".relations-type-summary" in styles
+    assert ".relation-grid-inner" in styles
+
+
+def test_daily_view_supports_date_browsing_and_history() -> None:
+    """The daily view must keep today's papers and let the user select a date
+    to browse historical papers, so discovering new papers never wipes old ones.
+    """
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Date-browsing controls in the dashboard panel.
+    assert 'id="dailyPrevDay"' in index
+    assert 'id="dailyNextDay"' in index
+    assert 'id="dailyDateFilter"' in index
+    assert 'id="historyPapers"' in index
+    # Logic wires prev/next/today and loads the selected date's papers.
+    assert "function browseDateBy" in app
+    assert "function loadHistoryPapers" in app
+    assert "function setBrowseDateFromInput" in app
+    assert "function renderHistoryPapers" in app
+    assert '"dailyPrevDay"' in app and "browseDateBy(-1)" in app
+    assert '"dailyNextDay"' in app and "browseDateBy(1)" in app
+    # Styles use CSS classes (strict CSP).
+    assert ".daily-browse" in styles
+
+
+def test_search_covers_history_and_falls_back_to_online() -> None:
+    """Search must work across stored (historical) papers and, when nothing is
+    found locally, offer an online arXiv search fallback."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    # Local search across the full corpus.
+    assert "/papers/search" in app
+    assert "function runOnlineSearch" in app
+    assert "function renderSearchResults" in app
+    # The online fallback requests the search endpoint with online=true.
+    assert "online=true" in app
+    # A button allows the user to trigger the online search when local is empty.
+    assert 'id="onlineSearchBtn"' in app
+    # Remote results are rendered back into the view (flagged remote).
+    assert ".remote-paper" in (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+    assert "paper.remote" in app
+
+
+def test_daily_papers_grouped_by_topic_with_configurable_quota() -> None:
+    """Today's papers must be grouped under topic cards; clicking a topic card
+    expands its papers below it, capped at the topic's daily_quota which is
+    editable in Settings."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Grouping logic + per-topic expand/collapse.
+    assert "function renderDailyByTopic" in app
+    assert "function toggleTopicPapers" in app
+    assert "data-topic-toggle" in app
+    assert "paperTopicObjs" in app
+    assert "daily_quota" in app
+    # Paper cards already carry topic tags.
+    assert "normalizeTopics" in app
+    # Settings exposes per-topic quota editing backed by PATCH /topics/{id}.
+    assert 'id="topicQuotaGrid"' in index
+    assert "function saveTopicQuota" in app
+    assert 'id="saveTopicQuotaButton"' in index
+    assert "apiJson(`/topics/" in app
+    assert "daily-quota" in app or "topic-quota" in app
+    # CSS classes (strict CSP).
+    assert ".daily-topic-card" in styles
+    assert ".daily-topic-papers" in styles
+    assert ".topic-quota-grid" in styles
+
+
+def test_topic_cards_support_inline_edit() -> None:
+    """Topic centre cards must offer an edit button that reveals an inline form
+    (name zh/en, aliases, quota) and persists changes via PATCH /topics/{id}."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Edit button rendered per topic card.
+    assert "data-topic-edit" in app
+    # Inline edit form pre-fills editable fields and offers save/cancel.
+    assert "function renderTopicEditForm" in app
+    assert "data-edit-name-zh" in app
+    assert "data-edit-name-en" in app
+    assert "data-edit-aliases" in app
+    assert "data-edit-quota" in app
+    assert "data-topic-edit-save" in app
+    assert "data-topic-edit-cancel" in app
+    # Save persists via PATCH /topics/{id} with an idempotency key.
+    assert "function saveTopicEdit" in app
+    assert 'apiJson(`/topics/${encodeURIComponent(topicId)}`' in app
+    assert "method: \"PATCH\"" in app
+    assert "function toggleTopicEdit" in app
+    # Strict CSP: CSS classes only.
+    assert ".topic-edit-form" in styles
+    assert ".topic-edit-field" in styles
+    assert ".topic-edit-actions" in styles
+
+
+def test_web_ui_uses_css_classes_under_strict_csp() -> None:
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert " style=" not in app
+    assert ".style." not in app
+    assert " style=" not in index
+    assert 'document.getElementById("view-reader").classList.contains("active")' in app
+    assert ".split-layout > *" in styles
+    assert "overflow-wrap: anywhere" in styles
+
+
+def test_api_json_sends_content_type_for_json_bodies() -> None:
+    """Regression guard: `...options` must be spread BEFORE `headers` so the
+    caller-supplied headers (e.g. Idempotency-Key) never clobber the
+    `Content-Type: application/json` header. If they do, FastAPI rejects the
+    body with 422 "Input should be a valid dictionary or object to extract
+    fields from (body)" because the request goes out as text/plain."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    # apiJson must set Content-Type when a body is present.
+    assert '"Content-Type": "application/json"' in app
+    # The options spread must come BEFORE the headers object so the caller's
+    # headers (Idempotency-Key) are layered on top and Content-Type survives.
+    # Locate the spread that feeds fetch directly, scoped to apiJson.
+    api_json_start = app.index("async function apiJson")
+    api_json_body = app[api_json_start:app.index("function readableDetail", api_json_start)]
+    spread_idx = api_json_body.index("...options,")
+    headers_idx = api_json_body.index("headers: {")
+    assert spread_idx < headers_idx, (
+        "apiJson must spread options before defining headers so caller "
+        "headers (Idempotency-Key) do not overwrite Content-Type"
+    )
+
+    # readableDetail helper must exist so 422 detail arrays render readably.
+    assert "function readableDetail(detail)" in app
+    assert "readableDetail(payload?.detail)" in app
+
+
+def test_topic_digest_button_scrolls_to_panel() -> None:
+    """When a topic's digest is requested, the page must scroll the digest
+    panel into view. The topic list is a long single-column stack on narrow
+    screens and the panel sits below it, so without this the result renders
+    far off-screen and the click looks like a no-op."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "scrollToDigestPanel" in app
+    assert "target.scrollIntoView" in app
+    # loadTopicDigest must scroll the expanded inline region into view.
+    assert "scrollToDigestPanel();" in app
+    assert 'data-topic-digest-inline' in app
+    # Panel should carry a clear "主题摘要" header so the result is obvious.
+    assert "topic-digest-label" in app
+    # The digest must expand inline under the clicked card, with an editable note.
+    assert "renderInlineTopicDigest" in app
+    assert "data-topic-note-save" in app
+    assert "topic-note-input" in app
+
+
+def test_topic_digest_papers_link_to_reader() -> None:
+    """Each paper listed inside a topic's inline digest must be clickable and
+    open the reader view so users can go from a topic directly to its papers
+    and view each paper's details."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    # Papers inside the inline digest carry a clickable link with the paper id.
+    assert "getPaperId(paper)" in app
+    assert 'data-topic-paper="${pid}"' in app
+    assert "topic-paper-link" in app
+    # Clicking a paper opens the reader (paper details) via openPaper.
+    assert "openPaper(button.dataset.topicPaper)" in app
+    # renderTopics must bind the click handlers for each paper link.
+    assert 'querySelectorAll("[data-topic-paper]")' in app
+
+
+def test_topic_has_view_today_papers_button() -> None:
+    """Each topic card must offer a '查看今日论文' action that jumps to the
+    paper library filtered to that topic."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    # The card action carries the topic id for the filter.
+    assert 'data-topic-papers="${topic.id}"' in app
+    # openTopicPapers sets the topic filter then switches to the papers view.
+    assert "function openTopicPapers" in app
+    assert "topicFilter" in app
+    assert "filter.value" in app
+    assert 'switchView("papers")' in app
+    assert "openTopicPapers(button.dataset.topicPapers)" in app
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+    assert ".topic-paper-link" in styles
+
+
+def test_jobs_view_live_polling_shows_progress() -> None:
+    """The 任务中心 must auto-refresh (poll) while visible so users see live
+    discovery/parse progress, and stop polling when leaving the view. The
+    progress indicator and poll-resume logic must live in the UI."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Track the active view and drive polling on entering the jobs view.
+    assert 'activeView: "dashboard"' in app
+    assert "function startJobsPolling" in app
+    assert "function stopJobsPolling" in app
+    assert "function pollJobsOnce" in app
+    # Entering jobs starts polling; leaving stops it.
+    assert 'if (view === "jobs")' in app
+    assert "startJobsPolling()" in app
+    assert "stopJobsPolling()" in app
+    assert "setInterval(pollJobsOnce, 4000)" in app
+    # A visible progress badge tells the user it is live/refreshing.
+    assert "renderJobsPollStatus" in app
+    assert 'id="jobsPollBadge"' in index
+    assert ".jobs-poll-badge" in styles
+    # Triggering discovery jumps to the jobs view so progress is visible.
+    assert 'switchView("jobs", true)' in app
+
+
+
+def test_jobs_pipeline_timeline_shows_midflight_progress() -> None:
+    """The 任务中心 must surface the full discovery pipeline (发现→下载→解析→
+    研读→翻译) with per-step progress and failure reasons, not just a flat job
+    list, so the operator can see what each run is actually doing."""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # The pipeline timeline is rendered on top of the job list.
+    assert "function renderPipelineRuns" in app
+    assert "function summarizeRunErrors" in app
+    # It walks the five real pipeline stages.
+    assert "论文发现" in app and "PDF 下载" in app and "文档解析" in app
+    assert "LLM 研读" in app and "中文翻译" in app
+    # Step states: running / succeeded / failed / waiting.
+    assert 'pipeline-step ${stateClass}' in app
+    assert 'stateClass === "running"' in app
+    assert 'stateClass === "failed"' in app
+    assert 'stateClass === "succeeded"' in app
+    assert 'stateClass = "waiting"' in app
+    assert ".pipeline-run-card" in styles
+    assert ".pipeline-step" in styles
+    assert ".pipeline-step.failed" in styles
+    assert ".pipeline-step.running" in styles
+    assert ".pipeline-errors" in styles
+    # The timeline is fed by the run snapshots returned by /workflows.
+    assert "state.workflows?.runs" in app
+
+
+def test_jobs_view_shows_llm_failure_diagnosis() -> None:
+    """失败环节不仅要标红，还必须在任务中心用已配置的 LLM 分析原因并展示，
+    让用户看到「为什么失败 + 怎么修」而不只是网络错误原文。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    # A helper surfaces error.llm_analysis on each failed job row.
+    assert "function jobLlmErrorSummary" in app
+    assert "diag.reason" in app or "llm_analysis" in app
+    # The pipeline error summary prefers the LLM diagnosis and shows suggestion.
+    assert "diag.reason" in app
+    assert "diag.suggestion" in app
+    assert "diag.detail" in app
+    # The raw error is still preserved as a fallback.
+    assert "err.message || res.message" in app
+
+
+def test_topbar_has_usage_help_and_directed_discovery() -> None:
+    """顶栏需提供「使用说明」弹层，把读论文/写专利/找论文/定向发现的步骤讲清，
+    并提供「定向发现」以满足特定方向+时间段+N 篇论文的诉求。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    # Help button + overlay exist.
+    assert 'id="helpButton"' in index
+    assert 'id="helpOverlay"' in index
+    assert "function openHelp" in app
+    assert "function closeHelp" in app
+    assert "function renderHelpContent" in app
+    # The five usage topics are documented.
+    assert "怎么读论文" in app
+    assert "怎么写专利" in app
+    assert "怎么找论文" in app
+    assert "发现某个方向的论文" in app
+    assert "发现特定方向、特定时间段的 N 篇论文" in app
+
+
+def test_directed_discovery_supports_topic_window_and_count() -> None:
+    """「定向发现」必须允许用户指定研究方向、起止时间段和每主题篇数，
+    才能实现『发现特定方向、特定时间段的 N 篇论文』，而非固定 6 主题 + 20 篇。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="directedDiscoveryButton"' in index
+    assert 'id="directedTopic"' in index
+    assert 'id="directedStartDate"' in index
+    assert 'id="directedEndDate"' in index
+    assert 'id="directedMaxResults"' in index
+    assert "function openDirectedDiscovery" in app
+    assert "function submitDirectedDiscovery" in app
+    # Payload carries user-selected topic ids, window, count and auto_process.
+    assert "topics: topicIds" in app
+    assert "window_start" in app
+    assert "max_results: Math.min(500, Math.max(1, maxResults))" in app
+    assert "auto_process: autoProcess" in app
+    # Backdrop click and Escape close the overlays.
+    assert "function bindOverlays" in app
+    assert "event.key !== \"Escape\"" in app
+
+
+def test_run_discovery_uses_lookback_window_not_single_day() -> None:
+    """触发发现必须用回溯窗口而不是严格单日窗口，否则数据源滞后一天发表的
+    论文会被全量过滤，导致「点了却找不到论文、0 篇入库」。修复后从所选日期
+    往前回溯 lookback_days 天，才能把最近发表的论文真正发现入库。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "function addDays" in app
+    assert "lookback = Math.max(1, Number(state.runtimeConfig?.schedule?.lookback_days) || 7)" in app
+    assert "windowStart = `${startDate}T00:00:00`" in app
+    # Payload uses the looked-back window and records the lookback for audit.
+    assert "window_start: windowStart" in app
+    assert "lookback_days: lookback" in app
+    # The alert tells the user how much history is being scanned.
+    assert "回溯 ${lookback} 天" in app
+
+
+def test_pipeline_run_cards_expandable_with_job_detail() -> None:
+    """发现流水线每张卡片应可点击展开，展示该卡片（run）下每个任务的
+    详细条目（阶段、状态、目标论文、错误/结果、时间），让用户看得见
+    daily-paper-intelligence 下每个任务的具体进展，而不只是一张概览图。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Each pipeline-run card has an expand toggle bound to run id.
+    assert "state.expandedRuns" in app
+    assert 'data-run-toggle="${runId}"' in app
+    assert "renderRunJobDetail(run, jobs)" in app
+    # Rendering the detail resolves paper titles from paper_ids / version ids.
+    assert "function paperIdToTitleMap" in app
+    assert "function jobTargetLabel" in app
+    assert "function jobTargetKindLabel" in app
+    # Detail lists every job with kind/status/message/time.
+    assert "pipeline-job-row" in app
+    assert "jobKindLabel(job.kind)" in app
+    assert "jobStatusLabel(job.status)" in app
+    assert "row" in app
+    # Clicking the toggle adds/removes the run from the expanded set.
+    assert "state.expandedRuns.delete(runId)" in app
+    assert "state.expandedRuns.add(runId)" in app
+    # The whole card is clickable to expand, not just the small toggle button.
+    assert "data-card-toggle" in app
+    assert "toggleRunExpanded" in app
+    assert "closest(\"button, a, input, select, textarea, label\")" in app
+    # CSS for the expandable detail rows exists.
+    assert ".pipeline-run-detail" in styles
+    assert ".pipeline-job-row" in styles
+    assert ".pipeline-run-expand-caret" in styles
+
+
+def test_daily_run_shows_token_usage() -> None:
+    """每个任务应统计 token 使用量；daily-paper-intelligence 完成后应在其
+    卡片上展示本轮流水线的 LLM token 消耗总量，展开后每个任务也展示自身
+    的 prompt/completion 与 total token，方便核算成本。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Helpers to format and extract token usage exist.
+    assert "function formatTokens" in app
+    assert "function jobTokensFor" in app
+    # Extract usage from top-level result.usage or nested response.usage.
+    assert "res.usage" in app
+    assert "res.response" in app
+    assert "prompt_tokens" in app
+    assert "completion_tokens" in app
+    assert "total_tokens" in app
+    # The pipeline card head shows the run-level token total.
+    assert "run.tokens" in app
+    assert "total_tokens" in app
+    # Each expanded job row shows its own token usage.
+    assert "jobTokensFor(job)" in app
+    # CSS for the token pill exists.
+    assert ".token-pill" in styles
+
+
+def test_pipeline_steps_show_dynamic_progress() -> None:
+    """流水线每个阶段（如 PDF 下载）应显示动态进度，例如下载 94 篇时
+    显示「3/94 进行中」，让用户看到任务正在推进，而不只是静态任务数。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    # Per-step done/total progress is computed from succeeded/failed/running
+    # counts reported in the run snapshot.
+    assert "const done = succeeded + failed;" in app
+    assert "const progress = total ? `${done}/${total}` : \"\";" in app
+    # The dynamic progress is shown in the step badge with running/failed states.
+    assert "`${progress} 进行中`" in app
+    assert "`${progress} 完成`" in app
+    # A tooltip explains the breakdown.
+    assert "progressTip" in app
+
+
+def test_paper_shows_stage_completion_tags() -> None:
+    """每篇论文应展示阶段完成标签（PDF 下载 / 解析 / 摘要翻译 / 研读），
+    让用户一眼看出该论文各阶段是否完成，而不只是单一的总状态。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Stage tag helpers exist.
+    assert "function paperStageTags" in app
+    assert "function renderStageTags" in app
+    # The four stages are tracked.
+    assert '"PDF 下载"' in app
+    assert '"摘要翻译"' in app
+    assert '"研读"' in app
+    # Completion is inferred from status / translated_abstract / report.
+    assert "translated_abstract" in app
+    assert "hasReport(paper)" in app
+    assert "hasDownload" in app
+    assert "hasTranslated" in app
+    assert "hasAnalyzed" in app
+    # They render in the paper library card and the reader list.
+    assert "renderStageTags(paper)" in app
+    assert ".paper-stage-tags" in styles
+    assert ".stage-tag" in styles
+    assert ".stage-tag.done" in styles
+    assert ".stage-tag.todo" in styles
+
+
+def test_pipeline_expanded_detail_is_structured_not_escaped() -> None:
+    """展开后的流水线明细应渲染为分组表格（按阶段），而不是被转义成代码
+    文本；每阶段带小节标题与成功/进行中/失败汇总。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Detail sections are grouped by job kind.
+    assert "pipeline-job-group" in app
+    assert "pipeline-job-group-head" in app
+    assert "KIND_ORDER" in app
+    # Per-group summary counts success/running/failed.
+    assert " 个 · ${succeeded} 成功" in app
+    assert "进行中" in app
+    # The group CSS exists.
+    assert ".pipeline-job-group" in styles
+    assert ".pipeline-job-group-head" in styles
+
+
+def test_settings_has_font_size_control() -> None:
+    """设置页应有「显示设置 > 文字大小」控件，选择后即时缩放界面文字并
+    持久化到本地浏览器（localStorage），下次打开自动沿用。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # Settings page has a font-size select and a save button.
+    assert 'id="fontSizeInput"' in index
+    assert 'id="saveFontSizeButton"' in index
+    assert "显示设置" in index
+    # JS wires up loading, applying, and saving the font scale.
+    assert "function applyFontSize" in app
+    assert "function loadFontScale" in app
+    assert "function saveFontSize" in app
+    assert "initFontSize()" in app
+    # Persisted to localStorage so the choice survives reloads.
+    assert "localStorage.setItem" in app
+    assert "research_hub.font_scale" in app
+    # JS binds the save button and select via getElementById.
+    assert 'getElementById("saveFontSizeButton")' in app
+    assert 'getElementById("fontSizeInput")' in app
+    # Applied via CSS classes (strict CSP forbids inline style).
+    assert "function applyFontSize" in app
+    assert "function fontSizeClass" in app
+    assert ".font-normal" in styles
+    assert ".font-large" in styles
+
+
+def test_patent_candidate_has_no_approver_field() -> None:
+    """专利候选表单不应再有「审批人」输入项：前端不再要求填写审批人，
+    只保留四项人工确认，避免创建候选时被该必填项卡住。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    # No approver input in the HTML form or JS bindings.
+    assert "approverInput" not in index
+    assert "approverInput" not in app
+    # Gate requires only the four manual confirmations.
+    assert "已完成四项人工确认" in app
+    assert "approval.approver" in app
+    # The approval helper hard-codes a fallback operator label.
+    assert 'approver: "web ui"' in app
+    # Help text no longer asks to specify an approver.
+    assert "指定审批人" not in app
+
+
+def test_reading_report_generated_on_demand() -> None:
+    """研读报告默认不在解析后自动生成（避免每篇都烧 LLM token），而是用户
+    点击阅读台「研读报告」tab 时按需触发：调用 /analyze 排队并按需刷新。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    # Reader report tab shows a "generate" action when no report yet.
+    assert "requestReadingReport" in app
+    assert "data-request-report" in app
+    assert "生成研读报告" in app
+    # Generation calls the backend analyze endpoint and polls for completion.
+    assert "/paper-versions/${encodeURIComponent(versionId)}/analyze" in app
+    assert "reportGenerating" in app
+    assert "reportError" in app
+    # The generating/loading and error states render in the reader.
+    assert "正在调用 LLM 解析论文并生成详细研读报告" in app
+    # Default schedule payload no longer auto-chains analyze.
+    assert '? ["translate"]' in app
+    assert 'after_parse: document.getElementById("scheduleTranslateInput")?.checked' in app
+
+
+def test_paper_library_has_no_all_dates_checkbox() -> None:
+    """论文库不应再有那个占据大面积的「全部日期」勾选框，避免用户误以为
+    是给论文打勾的选择框。论文库默认展示全部日期，用主题/状态/搜索筛选。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    # The checkbox and its label are gone from the toolbar.
+    assert "libraryShowAllDates" not in index
+    assert "全部日期" not in index
+    # No JS logic binds or reads the removed checkbox anymore.
+    assert "libraryShowAllDates" not in app
+    # The date input (used to reload a specific day) is retained.
+    assert 'id="dateFilter"' in index
+    # Library filtering no longer narrows by a date-id set.
+    assert "dateIds" not in app
+
+
+def test_reader_one_liner_shown_on_document_pane_top() -> None:
+    """阅读台点击论文后，论文的一句话描述应展示在论文展示页（右侧文档面板）
+    的上端，而不是左侧目录面板的顶部。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # A summary container sits above the document content in the reader pane.
+    assert 'id="readerPaperSummary"' in index
+    assert "readerPaperSummary" in app
+    assert "reader-paper-summary" in app
+    # The one-liner is filled into that pane-top container.
+    assert "paperSummary" in app
+    assert "reader-paper-summary" in styles
+    # The left nav meta is reset to its default placeholder (no one-liner there).
+    assert 'selectedMeta.textContent = "选择一篇论文查看详情。"' in app

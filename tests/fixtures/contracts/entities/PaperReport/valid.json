@@ -1,0 +1,29 @@
+{
+  "id": "report-contract-ordinary",
+  "paper_version_id": "pver-contract-ordinary-v1",
+  "summary": "The paper proposes a scheduling policy for long-context inference.",
+  "motivation": "Long prompts produce uneven prefill and decode pressure.",
+  "method": "Separate request phases and apply runtime-aware queueing.",
+  "experiments": "Latency simulation over mixed workloads.",
+  "results": "Lower tail latency in the contract scenario.",
+  "innovation": "Combines phase-aware scheduling with cache placement signals.",
+  "limitations": "The fixture does not encode legal novelty.",
+  "engineering_value": "Useful for runtime service design review.",
+  "reproduction_plan": "Replay synthetic mixed prompt lengths.",
+  "score": {
+    "engineering": 4,
+    "novelty": 3
+  },
+  "evidence": [
+    {
+      "kind": "fact",
+      "source": "paper-contract-ordinary",
+      "note": "Evaluation uses mixed prompt lengths.",
+      "section": "4",
+      "page": 8,
+      "quote_hash": "sha256:evidenceordinary"
+    }
+  ],
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

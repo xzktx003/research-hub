@@ -1,0 +1,10 @@
+{
+  "notes": [
+    {
+      "id": "or-note-missing-title",
+      "content": {
+        "abstract": {"value": "This note intentionally lacks a title."}
+      }
+    }
+  ]
+}

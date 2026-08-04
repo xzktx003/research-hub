@@ -1,0 +1,100 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/EvidenceAnchor.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Typed provenance boundary shared by reports and patent candidates.",
+  "properties": {
+    "kind": {
+      "enum": [
+        "fact",
+        "analysis",
+        "hypothesis"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+    },
+    "page": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Page"
+    },
+    "quote": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quote"
+    },
+    "quote_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quote Hash"
+    },
+    "report_field": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Report Field"
+    },
+    "section": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Section"
+    },
+    "source": {
+      "default": "user",
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "EvidenceAnchor",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

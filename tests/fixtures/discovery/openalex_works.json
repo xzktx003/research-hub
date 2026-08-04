@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "id": "https://openalex.org/W260800001",
+      "doi": "https://doi.org/10.5555/spec.decode.runtime",
+      "display_name": "Speculative Decode Runtime",
+      "abstract_inverted_index": {
+        "A": [0],
+        "serving": [1],
+        "paper": [2],
+        "about": [3],
+        "speculative": [4],
+        "decoding": [5],
+        "and": [6],
+        "runtime": [7],
+        "scheduling.": [8]
+      },
+      "publication_date": "2026-08-02",
+      "updated_date": "2026-08-02T03:00:00Z",
+      "authorships": [
+        {"author": {"display_name": "A. Researcher"}},
+        {"author": {"display_name": "B. Builder"}}
+      ],
+      "primary_location": {
+        "landing_page_url": "https://doi.org/10.5555/spec.decode.runtime"
+      },
+      "best_oa_location": {
+        "pdf_url": "https://arxiv.org/pdf/2608.00001"
+      },
+      "concepts": [
+        {"display_name": "Artificial intelligence"},
+        {"display_name": "Computer systems"}
+      ],
+      "cited_by_count": 7,
+      "unknown_openalex_field": "kept"
+    }
+  ]
+}

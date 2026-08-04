@@ -1,0 +1,23 @@
+{
+  "id": "patent-stage-run-001",
+  "invention_candidate_id": "invention-candidate-001",
+  "patent_draft_id": "patent-draft-001",
+  "stage": "self_check",
+  "status": "succeeded",
+  "input": {
+    "draft_version": "v1"
+  },
+  "output": {
+    "passed": true
+  },
+  "artifact_id": "artifact-patent-docx-001",
+  "job_id": "job-patent-builder-001",
+  "idempotency_key": "candidate-001:self-check:v1",
+  "metadata": {
+    "producer": "research-hub"
+  },
+  "started_at": "2026-08-02T10:00:00Z",
+  "completed_at": "2026-08-02T10:00:03Z",
+  "created_at": "2026-08-02T10:00:00Z",
+  "updated_at": "2026-08-02T10:00:03Z"
+}

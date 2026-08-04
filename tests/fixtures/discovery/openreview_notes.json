@@ -1,0 +1,18 @@
+{
+  "notes": [
+    {
+      "id": "or-note-2608-00001",
+      "forum": "or-forum-2608-00001",
+      "pdate": 1785622800000,
+      "mdate": 1785626400000,
+      "content": {
+        "title": {"value": "Speculative Decode Runtime"},
+        "abstract": {"value": "A serving paper about speculative decoding and runtime scheduling."},
+        "authors": {"value": ["A. Researcher", "B. Builder"]},
+        "keywords": {"value": ["speculative decoding", "serving"]},
+        "doi": {"value": "https://doi.org/10.5555/spec.decode.runtime"},
+        "extra_review_signal": {"value": "poster"}
+      }
+    }
+  ]
+}

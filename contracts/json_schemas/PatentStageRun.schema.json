@@ -1,0 +1,148 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/PatentStageRun.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "artifact_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artifact Id"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Idempotency Key"
+    },
+    "input": {
+      "additionalProperties": true,
+      "title": "Input",
+      "type": "object"
+    },
+    "invention_candidate_id": {
+      "title": "Invention Candidate Id",
+      "type": "string"
+    },
+    "job_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Job Id"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "Output",
+      "type": "object"
+    },
+    "patent_draft_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Patent Draft Id"
+    },
+    "stage": {
+      "enum": [
+        "intake",
+        "candidate_analysis",
+        "prior_art",
+        "preview",
+        "builder",
+        "self_check"
+      ],
+      "title": "Stage",
+      "type": "string"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "skipped",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "invention_candidate_id",
+    "stage",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PatentStageRun",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "canonical_title": {
+      "title": "Canonical Title",
+      "type": "string"
+    },
+    "abstract": {
+      "title": "Abstract",
+      "type": "string"
+    },
+    "translated_abstract": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Translated Abstract"
+    },
+    "method_summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Method Summary"
+    },
+    "language": {
+      "title": "Language",
+      "type": "string"
+    },
+    "first_publication_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Publication Date"
+    },
+    "current_version_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Version Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "selected": {
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "canonical_title",
+    "abstract",
+    "language",
+    "status",
+    "selected",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "Paper",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/Paper.schema.json",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "unknown_fields": "accepted_by_readers",
+    "additional_properties": "schemas_do_not_set_false"
+  }
+}

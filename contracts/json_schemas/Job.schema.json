@@ -1,0 +1,110 @@
+{
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/Job.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "additionalProperties": true,
+      "title": "Error",
+      "type": "object"
+    },
+    "external_task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "External Task Id"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Idempotency Key"
+    },
+    "kind": {
+      "title": "Kind",
+      "type": "string"
+    },
+    "next_poll_after": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Poll After"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "result": {
+      "additionalProperties": true,
+      "title": "Result",
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "succeeded",
+        "partial_succeeded",
+        "retryable_failed",
+        "terminal_failed",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "target_id": {
+      "title": "Target Id",
+      "type": "string"
+    },
+    "target_type": {
+      "title": "Target Type",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "status",
+    "target_type",
+    "target_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "Job",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}

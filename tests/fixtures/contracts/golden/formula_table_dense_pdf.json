@@ -1,0 +1,133 @@
+{
+  "baseline": "formula_table_dense_pdf",
+  "description": "A formula- and table-heavy PDF ingestion path with dedicated extracted structure artifacts.",
+  "papers": [
+    {
+      "id": "paper-golden-formula",
+      "canonical_title": "Analytical Cache Pressure Models for Transformer Serving",
+      "abstract": "A dense PDF with equations, tables, and extraction-sensitive report evidence.",
+      "language": "en",
+      "first_publication_date": "2026-07-31",
+      "current_version_id": "pver-golden-formula-v1",
+      "status": "parsed",
+      "selected": true,
+      "metadata": {
+        "baseline": "formula_table_dense_pdf"
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_versions": [
+    {
+      "id": "pver-golden-formula-v1",
+      "paper_id": "paper-golden-formula",
+      "version_label": "v1",
+      "source": "publisher",
+      "source_version_id": "formula-cache-v1",
+      "publication_date": "2026-07-31",
+      "pdf_url": "https://example.test/papers/formula-table-dense.pdf",
+      "pdf_checksum": "sha256:goldenformulapdf",
+      "metadata": {
+        "page_count": 18,
+        "dense_regions": ["equations", "tables"]
+      },
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-golden-formula-pdf",
+      "paper_version_id": "pver-golden-formula-v1",
+      "patent_draft_id": null,
+      "artifact_type": "raw_pdf",
+      "uri": "file:///contracts/golden/formula-table-dense.pdf",
+      "media_type": "application/pdf",
+      "checksum": "sha256:goldenformulapdf",
+      "metadata": {
+        "page_count": 18
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-formula-md",
+      "paper_version_id": "pver-golden-formula-v1",
+      "patent_draft_id": null,
+      "artifact_type": "mineru_markdown",
+      "uri": "file:///contracts/golden/formula-table-dense.md",
+      "media_type": "text/markdown",
+      "checksum": "sha256:goldenformulamarkdown",
+      "metadata": {
+        "parser": "mineru",
+        "table_count": 9,
+        "equation_count": 27
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-formula-tables",
+      "paper_version_id": "pver-golden-formula-v1",
+      "patent_draft_id": null,
+      "artifact_type": "mineru_tables",
+      "uri": "file:///contracts/golden/formula-table-dense.tables.json",
+      "media_type": "application/json",
+      "checksum": "sha256:goldenformulatables",
+      "metadata": {
+        "table_count": 9
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    },
+    {
+      "id": "artifact-golden-formula-equations",
+      "paper_version_id": "pver-golden-formula-v1",
+      "patent_draft_id": null,
+      "artifact_type": "mineru_equations",
+      "uri": "file:///contracts/golden/formula-table-dense.equations.json",
+      "media_type": "application/json",
+      "checksum": "sha256:goldenformulaequations",
+      "metadata": {
+        "equation_count": 27
+      },
+      "created_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "paper_reports": [
+    {
+      "id": "report-golden-formula",
+      "paper_version_id": "pver-golden-formula-v1",
+      "summary": "The paper models cache pressure with equations and tabulated serving regimes.",
+      "motivation": "Cache placement decisions need quantitative pressure estimates.",
+      "method": "Combine analytical equations with workload tables.",
+      "experiments": "Compare formula predictions against tabled regimes.",
+      "results": "The fixture preserves equation and table references.",
+      "innovation": "Gives structured signals for downstream invention mining.",
+      "limitations": "Extraction quality must be checked for dense regions.",
+      "engineering_value": "Useful for parser regression checks.",
+      "reproduction_plan": "Compare extracted table and equation counts to source expectations.",
+      "score": {
+        "extraction_risk": 5
+      },
+      "evidence": [
+        {
+          "kind": "fact",
+          "source": "artifact-golden-formula-equations",
+          "note": "Equation artifact is required for this baseline.",
+          "section": "2",
+          "page": 4
+        },
+        {
+          "kind": "analysis",
+          "source": "artifact-golden-formula-tables",
+          "note": "Table artifact is required for this baseline.",
+          "section": "5",
+          "page": 12
+        }
+      ],
+      "created_at": "2026-08-02T00:00:00+00:00",
+      "updated_at": "2026-08-02T00:00:00+00:00"
+    }
+  ],
+  "invention_candidates": [],
+  "patent_drafts": []
+}

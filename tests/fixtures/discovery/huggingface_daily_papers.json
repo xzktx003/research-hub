@@ -1,0 +1,17 @@
+{
+  "papers": [
+    {
+      "id": "2608.00001",
+      "title": "Speculative Decode Runtime",
+      "abstract": "A serving paper about speculative decoding and runtime scheduling.",
+      "authors": ["A. Researcher", "B. Builder"],
+      "published_at": "2026-08-02T01:00:00Z",
+      "pdf_url": "https://arxiv.org/pdf/2608.00001",
+      "url": "https://huggingface.co/papers/2608.00001",
+      "categories": ["cs.LG", "cs.DC"],
+      "doi": "10.5555/spec.decode.runtime",
+      "upvotes": 42,
+      "unexpected_trending_field": {"kept": true}
+    }
+  ]
+}

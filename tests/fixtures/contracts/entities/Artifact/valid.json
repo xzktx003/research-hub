@@ -1,0 +1,14 @@
+{
+  "id": "artifact-contract-markdown",
+  "paper_version_id": "pver-contract-ordinary-v1",
+  "patent_draft_id": null,
+  "artifact_type": "mineru_markdown",
+  "uri": "file:///contracts/artifacts/ordinary.md",
+  "media_type": "text/markdown",
+  "checksum": "sha256:ordinarymarkdown",
+  "metadata": {
+    "parser": "mineru",
+    "pages": 12
+  },
+  "created_at": "2026-08-02T00:00:00+00:00"
+}

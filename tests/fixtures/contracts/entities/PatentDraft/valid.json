@@ -1,0 +1,14 @@
+{
+  "id": "draft-contract-two-paper",
+  "invention_candidate_id": "candidate-contract-two-paper",
+  "case_name": "Phase-Aware Cache Migration",
+  "version_label": "v-00000001",
+  "status": "generated",
+  "markdown": "# Phase-Aware Cache Migration\n\n技术交底书草稿，不构成法律意义上的新颖性结论。",
+  "self_check": {
+    "legal_notice": "技术交底书草稿，不构成法律意义上的新颖性、创造性或授权结论。",
+    "candidate_id": "candidate-contract-two-paper"
+  },
+  "created_at": "2026-08-02T00:00:00+00:00",
+  "updated_at": "2026-08-02T00:00:00+00:00"
+}

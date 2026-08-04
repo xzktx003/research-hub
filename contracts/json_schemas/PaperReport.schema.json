@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "EvidenceAnchor": {
+      "additionalProperties": true,
+      "description": "Typed provenance boundary shared by reports and patent candidates.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "analysis",
+            "hypothesis"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "quote_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote Hash"
+        },
+        "report_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Field"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "source": {
+          "default": "user",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "EvidenceAnchor",
+      "type": "object"
+    }
+  },
+  "$id": "https://research-hub.local/contracts/2026-08-02.phase0/PaperReport.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "engineering_value": {
+      "default": "",
+      "title": "Engineering Value",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceAnchor"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "experiments": {
+      "default": "",
+      "title": "Experiments",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "innovation": {
+      "default": "",
+      "title": "Innovation",
+      "type": "string"
+    },
+    "limitations": {
+      "default": "",
+      "title": "Limitations",
+      "type": "string"
+    },
+    "method": {
+      "default": "",
+      "title": "Method",
+      "type": "string"
+    },
+    "motivation": {
+      "default": "",
+      "title": "Motivation",
+      "type": "string"
+    },
+    "paper_version_id": {
+      "title": "Paper Version Id",
+      "type": "string"
+    },
+    "reproduction_plan": {
+      "default": "",
+      "title": "Reproduction Plan",
+      "type": "string"
+    },
+    "results": {
+      "default": "",
+      "title": "Results",
+      "type": "string"
+    },
+    "score": {
+      "additionalProperties": true,
+      "title": "Score",
+      "type": "object"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "paper_version_id",
+    "summary",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PaperReport",
+  "type": "object",
+  "x-contract-version": "2026-08-02.phase0",
+  "x-forward-compatibility": {
+    "additional_properties": "schemas_do_not_set_false",
+    "unknown_fields": "accepted_by_readers"
+  }
+}
