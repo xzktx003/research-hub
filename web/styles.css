@@ -1072,6 +1072,19 @@ textarea {
   background: var(--amber);
 }
 
+/* Degraded backend adapters made explicit on the dashboard: name the broken
+   service, state why it matters, and offer a one-click jump to settings. */
+.adapter-degraded {
+  color: var(--red);
+  margin: 2px 0;
+}
+.adapter-degraded::before {
+  content: "⚠ ";
+}
+.adapter-fix-link {
+  margin-top: 6px;
+}
+
 .draft-list {
   display: grid;
   gap: 10px;

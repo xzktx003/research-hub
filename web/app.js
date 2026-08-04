@@ -2886,19 +2886,44 @@ function renderAdapterHealth(containerId) {
     return;
   }
   const adapters = normalizeList(result.data, ["adapters", "integrations", "services", "items"]);
+  const healthy = adapters.filter(adapterHealthy);
+  const degraded = adapters.filter((a) => !adapterHealthy(a));
   if (containerId !== "settingsAdapterHealth") {
-    const okCount = adapters.filter(adapterHealthy).length;
+    const allOk = degraded.length === 0;
     container.innerHTML = adapters.length
       ? html`
-        <div class="gate-item ${okCount === adapters.length ? "pass" : "warn"}">
-          <span class="gate-icon">${okCount === adapters.length ? "✓" : "!"}</span>
-          <div><strong>系统能力摘要</strong><p class="meta">${okCount}/${adapters.length} 项后端能力可用；管理员可在设置页查看适配器明细。</p></div>
+        <div class="gate-item ${allOk ? "pass" : "warn"}">
+          <span class="gate-icon">${allOk ? "✓" : "!"}</span>
+          <div>
+            <strong>系统能力摘要</strong>
+            <p class="meta">${healthy.length}/${adapters.length} 项后端能力可用。</p>
+            ${degraded.length ? raw(degraded.map((a) => html`
+              <p class="meta adapter-degraded">
+                ${escapeHtml(adapterLabel(a))} 不可用：${escapeHtml(a.message || a.error || "状态未知")}
+              </p>
+            `).join("")) : ""}
+            ${degraded.length ? raw(`<button class="secondary adapter-fix-link" type="button" data-goto-settings>前往设置页查看详情</button>`) : ""}
+          </div>
         </div>
       `
       : emptyBlock("健康接口未返回系统能力明细。");
+    const fixLink = container.querySelector("[data-goto-settings]");
+    if (fixLink) fixLink.addEventListener("click", () => switchView("settings", true));
     return;
   }
   container.innerHTML = adapters.length ? adapters.map(adapterHealthCard).join("") : emptyBlock("健康接口未返回适配器明细。");
+}
+
+function adapterLabel(adapter) {
+  const names = {
+    mineru: "文档解析（MinerU）",
+    arxiv: "论文发现（arXiv）",
+    analysis: "大模型研读/翻译",
+    patent: "专利查新",
+    dify: "Dify 工作流",
+    openai: "大模型研读/翻译",
+  };
+  return names[String(adapter.name || adapter.adapter || "").toLowerCase()] || adapter.name || adapter.adapter || "适配器";
 }
 
 // Compose the text a paper search should match against. We deliberately avoid
