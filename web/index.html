@@ -222,14 +222,23 @@
                   <p id="selectedPaperMeta">选择一篇论文查看详情。</p>
                 </div>
               </div>
+              <div class="reader-index-filter">
+                <input type="search" id="readerIndexSearch" placeholder="过滤标题/主题…" aria-label="过滤论文目录">
+              </div>
               <div id="readerPaperList" class="compact-list"></div>
             </aside>
             <section class="panel document-pane">
-              <div class="tab-bar" role="tablist" aria-label="文档视图">
-                <button class="tab active" data-doc-tab="pdf" type="button">PDF</button>
-                <button class="tab" data-doc-tab="markdown" type="button">Markdown</button>
-                <button class="tab" data-doc-tab="report" type="button">研读报告</button>
-                <button class="tab" data-doc-tab="evidence" type="button">证据</button>
+              <div class="document-pane-top">
+                <div class="tab-bar" role="tablist" aria-label="文档视图">
+                  <button class="tab active" data-doc-tab="pdf" type="button">PDF</button>
+                  <button class="tab" data-doc-tab="markdown" type="button">Markdown</button>
+                  <button class="tab" data-doc-tab="report" type="button">研读报告</button>
+                  <button class="tab" data-doc-tab="evidence" type="button">证据</button>
+                </div>
+                <div class="reader-nav-buttons">
+                  <button class="secondary" type="button" id="readerPrevPaper" title="上一篇论文">‹ 上一篇</button>
+                  <button class="secondary" type="button" id="readerNextPaper" title="下一篇论文">下一篇 ›</button>
+                </div>
               </div>
               <div id="readerPaperSummary" class="reader-paper-summary hidden"></div>
               <article id="documentContent" class="document-content"></article>
@@ -289,6 +298,20 @@
                 <p>异步任务状态、错误原因和重试入口。进入本页会自动刷新进展。</p>
               </div>
               <span class="jobs-poll-badge" id="jobsPollBadge">自动刷新中...</span>
+            </div>
+            <div class="job-filters">
+              <select id="jobKindFilter" aria-label="按任务类型筛选">
+                <option value="">全部类型</option>
+              </select>
+              <select id="jobStatusFilter" aria-label="按状态筛选">
+                <option value="">全部状态</option>
+                <option value="queued">排队中</option>
+                <option value="running">进行中</option>
+                <option value="succeeded">成功</option>
+                <option value="retryable_failed">可重试失败</option>
+                <option value="terminal_failed">已失败</option>
+                <option value="cancelled">已取消</option>
+              </select>
             </div>
             <div id="jobList" class="job-table"></div>
           </div>
@@ -634,6 +657,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260805mineru" defer></script>
+    <script src="/static/app.js?v=20260805ux" defer></script>
   </body>
 </html>

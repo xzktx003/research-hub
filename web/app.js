@@ -205,6 +205,10 @@ function bindControls() {
   document.getElementById("statusFilter").addEventListener("change", render);
   document.getElementById("sortFilter").addEventListener("change", render);
   document.getElementById("dateFilter").addEventListener("change", loadAll);
+  bindReaderIndexSearch();
+  bindReaderNavButtons();
+  document.getElementById("jobKindFilter")?.addEventListener("change", () => { if (state.activeView === "jobs") renderJobs(); });
+  document.getElementById("jobStatusFilter")?.addEventListener("change", () => { if (state.activeView === "jobs") renderJobs(); });
   document.getElementById("selectAllVisibleBtn")?.addEventListener("click", () => {
     const papers = filteredPapers();
     papers.forEach((paper) => state.batchSelected.add(getPaperId(paper)));
@@ -348,6 +352,7 @@ async function pollJobsOnce() {
         && state.jobs.every((job, index) => (job.status || "") === (items[index]?.status || ""))
       );
       state.jobs = items;
+      populateJobKindFilter(items);
       if (changed) renderJobsElseJobsPollStatus();
       else renderJobsPollStatus();
     }
@@ -1418,6 +1423,7 @@ function paperCard(paper) {
         ${raw(buildCardExternalLinks(paper))}
         <div class="paper-actions">
           <button class="secondary" type="button" data-open-paper="${id}">打开阅读台</button>
+          ${raw(paperParseButton(paper, id))}
           <button class="secondary" type="button" data-select-patent="${id}">${state.selectedForPatent.has(id) ? "取消候选" : "加入专利候选"}</button>
           <button class="secondary" type="button" data-notebook-add="${id}">${state.notebookPapers.has(id) ? "已在笔记本" : "加入笔记本"}</button>
           <button class="secondary" type="button" data-similar-papers="${id}">相似论文</button>
@@ -1473,6 +1479,9 @@ function bindPaperCardActions(container) {
   container.querySelectorAll("[data-similar-papers]").forEach((button) => {
     button.addEventListener("click", () => showSimilarPapers(button.dataset.similarPapers));
   });
+  container.querySelectorAll("[data-parse-paper]").forEach((button) => {
+    button.addEventListener("click", () => parsePaperCard(button.dataset.parsePaper, button));
+  });
   container.querySelectorAll("[data-batch-check]").forEach((checkbox) => {
     checkbox.addEventListener("change", () => {
       const paperId = checkbox.dataset.batchCheck;
@@ -1481,6 +1490,126 @@ function bindPaperCardActions(container) {
       updateBatchSelectionUi();
     });
   });
+}
+
+// 电脑卡片上的「一键解析」按钮：仅当论文有版本（可定位到 PDF）且尚未解析时显示。
+// 作为依赖解析阅读的用户，PDF 已下载但解析未完成时，能从论文库直接推动解析，
+// 不必先进阅读台等待。
+function paperParseButton(paper, paperId) {
+  const tags = paperStageTags(paper);
+  const download = tags.find((t) => t.key === "download");
+  const parse = tags.find((t) => t.key === "parse");
+  if (!parse) return "";
+  if (parse.done) return "";
+  const versionId = getVersionId(paper);
+  if (!versionId) return "";
+  const busy = state.parsingPapers?.get?.(paperId);
+  if (busy) {
+    return `<button class="secondary" type="button" disabled>${busy === "downloading" ? "下载中…" : "解析中…"}</button>`;
+  }
+  // PDF 已下载 → 直接解析；否则按钮提示先下载（点击后会自动先下载再解析）。
+  const label = download.done ? "解析" : "解析(PDF)";
+  return `<button class="secondary parse-trigger" type="button" data-parse-paper="${paperId}" title="${download.done ? "在服务器解析该 PDF 为结构化 Markdown" : "先在服务器下载 PDF，随后解析为结构化 Markdown"}">${label}</button>`;
+}
+
+// 从论文库卡片触发解析：确保 PDF 已在服务器，然后提交 parse 任务并轮询到
+// 完成或明确失败。期间按钮显示「解析中…」，完成后刷新论文库与阅读台。
+async function parsePaperCard(paperId, button) {
+  const paper = knownPapers().find((p) => getPaperId(p) === paperId);
+  if (!paper) {
+    showAlert("未找到该论文，可能已被移除，请刷新后重试。");
+    return;
+  }
+  const versionId = getVersionId(paper);
+  if (!versionId) {
+    showAlert("该论文缺少版本信息，暂时无法解析。");
+    return;
+  }
+  if (!state.parsingPapers) state.parsingPapers = new Map();
+  if (state.parsingPapers.get(paperId)) return; // 防重入
+  state.parsingPapers.set(paperId, "downloading");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "下载中…";
+  }
+  try {
+    // 1) 确保 PDF 在服务器（若已存在会幂等跳过）
+    const tags = paperStageTags(paper);
+    const downloadDone = tags.find((t) => t.key === "download")?.done;
+    if (!downloadDone) {
+      try {
+        const dl = await apiJson(`/paper-versions/${encodeURIComponent(versionId)}/download`, {
+          method: "POST",
+          headers: { "Idempotency-Key": `web-parse-pdf-${paperId}-${Date.now()}` },
+          body: JSON.stringify({ force: true, options: {} }),
+        });
+        const dlJobId = dl.job_id || dl.id;
+        if (dlJobId) {
+          state.parsingPapers.set(paperId, "downloading");
+          if (button) button.textContent = "下载中…";
+          const dlOk = await waitJobSettled(dlJobId, 3 * 60 * 1000);
+          if (!dlOk.ok) throw new Error(dlOk.message || "PDF 下载失败");
+        }
+      } catch (error) {
+        showAlert(`下载 PDF 失败：${friendlyPdfError(error.message)}`);
+        return;
+      }
+    }
+    // 2) 提交解析任务
+    state.parsingPapers.set(paperId, "parsing");
+    if (button) button.textContent = "解析中…";
+    const result = await apiJson(`/paper-versions/${encodeURIComponent(versionId)}/parse`, {
+      method: "POST",
+      headers: { "Idempotency-Key": `web-parse-${paperId}-${Date.now()}` },
+      body: JSON.stringify({ after_parse: [], options: {} }),
+    });
+    const jobId = result.job_id || result.id;
+    if (!jobId) throw new Error("后端未返回解析任务 ID");
+    const settled = await waitJobSettled(jobId, 10 * 60 * 1000);
+    if (!settled.ok) {
+      showAlert(`解析未完成：${settled.message || "后端返回失败状态"}`);
+      return;
+    }
+    showAlert("解析完成，该论文的 Markdown 与结构化内容已就绪。");
+  } catch (error) {
+    showAlert(`触发解析失败：${error.message}`);
+  } finally {
+    state.parsingPapers.delete(paperId);
+    state.pdfDownloading = { versionId: null, active: false, error: null };
+    // 刷新论文库与阅读台，让卡片阶段标签即时更新。
+    const seq = ++state.loadSeq;
+    state.allPapers = [];
+    await loadAllPapers();
+    if (state.activeView === "reader") {
+      state.workspaces.delete(paperId);
+      loadWorkspace(paperId);
+    }
+    renderReader && renderReader();
+  }
+}
+
+// 轮询一个异步任务直到成功/失败或超时；返回 { ok, message }。
+async function waitJobSettled(jobId, timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 3 * 60 * 1000);
+  for (;;) {
+    if (Date.now() > deadline) return { ok: false, message: "任务超时，仍在后台运行，稍后可刷新查看结果。" };
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    let job;
+    try {
+      job = await apiJson(`/jobs/${encodeURIComponent(jobId)}`);
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+    if (["succeeded", "partial_succeeded"].includes(job.status)) return { ok: true };
+    if (["retryable_failed", "terminal_failed", "cancelled"].includes(job.status)) {
+      const err = job.error;
+      let brief = String(job.status);
+      if (err) {
+        brief = typeof err === "string" ? err : (err.message || err.detail || err.reason || JSON.stringify(err));
+      }
+      return { ok: false, message: brief };
+    }
+  }
 }
 
 function updateBatchSelectionUi() {
@@ -1604,6 +1733,66 @@ function openPaper(paperId) {
   loadWorkspace(paperId);
 }
 
+function readerIndexFilter() {
+  return String(document.getElementById("readerIndexSearch")?.value || "").trim().toLowerCase();
+}
+
+function bindReaderIndexSearch() {
+  const input = document.getElementById("readerIndexSearch");
+  if (!input) return;
+  input.addEventListener("input", () => {
+    renderReader();
+    const countEl = document.getElementById("readerIndexCount");
+    if (countEl) countEl.textContent = `共 ${document.querySelectorAll("#readerPaperList [data-reader-paper]").length} 篇`;
+  });
+}
+
+function bindReaderNavButtons() {
+  const prev = document.getElementById("readerPrevPaper");
+  const next = document.getElementById("readerNextPaper");
+  if (!prev || !next) return;
+  const jump = (delta) => {
+    const papers = readerDirectoryPapers();
+    if (!papers.length) return;
+    const idx = papers.findIndex((p) => getPaperId(p) === state.selectedPaperId);
+    const target = idx === -1 ? papers[0] : papers[(idx + delta + papers.length) % papers.length];
+    if (target) openPaper(getPaperId(target));
+  };
+  prev.addEventListener("click", () => jump(-1));
+  next.addEventListener("click", () => jump(1));
+}
+
+// 更新上/下篇导航按钮的可用状态：目录为空或只有一篇时禁用。
+function renderReaderPrevNextState(selectedInList) {
+  const prev = document.getElementById("readerPrevPaper");
+  const next = document.getElementById("readerNextPaper");
+  if (!prev || !next) return;
+  const papers = readerDirectoryPapers();
+  const disabled = papers.length < 2;
+  prev.disabled = disabled;
+  next.disabled = disabled;
+  // 当选中论文不在过滤目录内时禁用导航（避免跳到无关论文）。
+  if (!selectedInList && state.selectedPaperId) {
+    prev.disabled = true;
+    next.disabled = true;
+  }
+}
+
+// 阅读台目录的当前可见论文序列（应用搜索过滤），供目录渲染与上下篇导航共用。
+function readerDirectoryPapers() {
+  const filter = readerIndexFilter();
+  const papers = filteredPapers();
+  const currentPaper = selectedPaper();
+  if (currentPaper && !papers.some((paper) => getPaperId(paper) === state.selectedPaperId)) {
+    papers.unshift(currentPaper);
+  }
+  if (!filter) return papers;
+  return papers.filter((paper) => {
+    const haystack = `${paperTitle(paper)} ${normalizeTopics(paper).join(" ")} ${paper.authors ? (Array.isArray(paper.authors) ? paper.authors.map((a) => (typeof a === "string" ? a : a?.name)).join(" ") : "") : ""} ${paper.abstract || ""}`.toLowerCase();
+    return haystack.includes(filter);
+  });
+}
+
 function renderReader() {
   if (!document.getElementById("view-reader").classList.contains("active")) return;
   const list = document.getElementById("readerPaperList");
@@ -1613,13 +1802,9 @@ function renderReader() {
     document.getElementById("technicalCards").innerHTML = emptyBlock("暂无技术卡片。");
     return;
   }
-  const papers = filteredPapers();
-  const currentPaper = selectedPaper();
-  if (currentPaper && !papers.some((paper) => getPaperId(paper) === state.selectedPaperId)) {
-    papers.unshift(currentPaper);
-  }
+  const papers = readerDirectoryPapers();
   if (!papers.length) {
-    list.innerHTML = emptyBlock("没有可阅读论文。");
+    list.innerHTML = readerIndexFilter() ? emptyBlock("没有匹配的论文。") : emptyBlock("没有可阅读论文。");
     document.getElementById("documentContent").innerHTML = emptyBlock("选择论文后显示 PDF、Markdown、研读报告或证据。");
     document.getElementById("technicalCards").innerHTML = emptyBlock("暂无技术卡片。");
     return;
@@ -1629,6 +1814,7 @@ function renderReader() {
   // document auto-loaded) until the user picks one.
   const selected = selectedPaper();
   const workspace = selectedWorkspace();
+  const selectedInList = papers.some((paper) => getPaperId(paper) === state.selectedPaperId);
   list.innerHTML = papers
     .map((paper) => {
       const id = getPaperId(paper);
@@ -1638,6 +1824,8 @@ function renderReader() {
   list.querySelectorAll("[data-reader-paper]").forEach((button) => {
     button.addEventListener("click", () => openPaper(button.dataset.readerPaper));
   });
+  // 当前选中论文被搜索过滤掉时，仍保持文档区可见（导航按钮仍可循目录跳转）。
+  renderReaderPrevNextState(selectedInList);
   const selectedMeta = document.getElementById("selectedPaperMeta");
   if (selectedMeta) {
     // 左侧目录面板只保留默认占位；一句话描述改到右侧论文展示页上端展示。
@@ -2376,6 +2564,20 @@ function renderNotebookView() {
     : emptyBlock("笔记本中的论文尚未生成研读报告。在阅读台中打开论文即可触发后端分析。");
 }
 
+// 用当前任务数据填充「类型」筛选下拉的选项（保留用户已选值）。
+function populateJobKindFilter(jobs) {
+  const select = document.getElementById("jobKindFilter");
+  if (!select) return;
+  const kinds = [...new Set(jobs.map((job) => job.kind).filter(Boolean))].sort();
+  const current = select.value;
+  const options = ['<option value="">全部类型</option>'];
+  kinds.forEach((kind) => {
+    options.push(`<option value="${escapeHtml(kind)}">${escapeHtml(jobKindLabel(kind) || kind)}</option>`);
+  });
+  select.innerHTML = options.join("");
+  if (current && kinds.includes(current)) select.value = current;
+}
+
 function renderJobs() {
   const container = document.getElementById("jobList");
   // Always show the pipeline timeline on top so the user can see what each
@@ -2389,7 +2591,18 @@ function renderJobs() {
     container.innerHTML = pipelineHtml + emptyBlock("暂无细化任务记录。");
     return;
   }
-  const jobRows = state.jobs.map((job) => {
+  const kindFilter = document.getElementById("jobKindFilter")?.value || "";
+  const statusFilter = document.getElementById("jobStatusFilter")?.value || "";
+  const visibleJobs = state.jobs.filter((job) => {
+    if (kindFilter && String(job.kind || "") !== kindFilter) return false;
+    if (statusFilter && String(job.status || "") !== statusFilter) return false;
+    return true;
+  });
+  if (!visibleJobs.length) {
+    container.innerHTML = pipelineHtml + html`<h3 class="daily-history-title">全部异步任务（按最近更新倒序）</h3>` + emptyBlock("没有符合筛选条件的任务。");
+    return;
+  }
+  const jobRows = visibleJobs.map((job) => {
     const status = job.status || "unknown";
     const actionError = state.jobActionErrors.get(job.id);
     return html`
@@ -2750,12 +2963,30 @@ function renderRelations() {
     return;
   }
   const items = normalizeList(state.relations, ["items"]);
+  // 按论文过滤：找出与搜索词相关的所有关系（来源或目标论文标题/ID 命中）。
+  const relFilter = String(document.getElementById("relationsSearch")?.value || "").trim().toLowerCase();
+  const filteredItems = relFilter
+    ? items.filter((rel) => {
+        const hay = `${rel.from_title || ""} ${rel.to_title || ""} ${rel.from_paper_id || ""} ${rel.to_paper_id || ""}`.toLowerCase();
+        return hay.includes(relFilter);
+      })
+    : items;
   if (header) {
     header.innerHTML = html`
-      <span class="pill">共 ${items.length} 条关系</span>
-      <span class="pill">主题/关键词规则自动生成</span>
-      ${raw(items.length ? html`<button class="secondary compact-action" type="button" id="relationsRebuildBtn">重建关系</button>` : "")}
+      <div class="relations-header-row">
+        <span class="pill">共 ${items.length} 条关系</span>
+        <span class="pill">主题/关键词规则自动生成</span>
+        <input type="search" id="relationsSearch" placeholder="按论文标题/ID过滤…" aria-label="按论文过滤关系" value="${(document.getElementById("relationsSearch")?.value || "")}">
+        ${raw(filteredItems.length !== items.length ? html`<button class="secondary compact-action" type="button" id="relationsClearFilter">清除过滤</button>` : "")}
+        ${raw(items.length ? html`<button class="secondary compact-action" type="button" id="relationsRebuildBtn">重建关系</button>` : "")}
+      </div>
     `;
+    const search = header.querySelector("#relationsSearch");
+    if (search) {
+      search.addEventListener("input", () => renderRelations());
+      const clear = header.querySelector("#relationsClearFilter");
+      if (clear) clear.addEventListener("click", () => { search.value = ""; renderRelations(); });
+    }
   }
   if (!items.length) {
     container.innerHTML = html`
@@ -2765,19 +2996,26 @@ function renderRelations() {
         <button class="primary" type="button" id="relationsRebuildBtn">自动重建/跑论文关系</button>
       </div>
     `;
+  } else if (!filteredItems.length) {
+    container.innerHTML = html`<div class="relations-empty"><p>没有命中「${escapeHtml(document.getElementById("relationsSearch")?.value || "")}」的论文关系。</p><p class="meta">可尝试其他关键词，或清除过滤查看全部关系。</p></div>`;
   } else {
     const byType = {};
     items.forEach((r) => { const t = r.relation_type || "relation"; byType[t] = (byType[t] || 0) + 1; });
     const typeSummary = Object.entries(byType)
       .map(([type, count]) => html`<span class="tag">${type} ${count}</span>`).join(" ");
     // Sort by confidence descending and paginate so the view stays responsive
-    // even when a full rebuild produces thousands of edges.
-    const sorted = [...items].sort((a, b) => (Number(b.confidence) || 0) - (Number(a.confidence) || 0));
+    // even when a full rebuild produces thousands of edges. Filtering applies
+    // before pagination so a search shows all matches.
+    const sorted = [...filteredItems].sort((a, b) => (Number(b.confidence) || 0) - (Number(a.confidence) || 0));
     const limit = Math.max(1, Number(state.relationsLimit) || 60);
     const visible = sorted.slice(0, limit);
-    const showMore = items.length > limit;
+    const totalShown = filteredItems.length;
+    const showMore = filteredItems.length > limit;
+    const extraSummary = relFilter
+      ? html`<span class="tag">命中 ${totalShown}</span>`
+      : "";
     container.innerHTML = html`
-      <div class="relations-type-summary">${raw(typeSummary)}</div>
+      <div class="relations-type-summary">${raw(typeSummary)}${raw(extraSummary)}</div>
       <div class="relation-grid-inner">
         ${raw(visible.map((relation) => html`
           <article class="relation-card">
@@ -2793,7 +3031,7 @@ function renderRelations() {
           </article>
         `).join(""))}
       </div>
-      ${raw(showMore ? html`<button class="secondary" type="button" id="relationsShowMoreBtn">显示更多（${items.length - limit} 条）</button>` : "")}
+      ${raw(showMore ? html`<button class="secondary" type="button" id="relationsShowMoreBtn">显示更多（${totalShown - limit} 条）</button>` : "")}
     `;
     const showMoreBtn = container.querySelector("#relationsShowMoreBtn");
     if (showMoreBtn) {

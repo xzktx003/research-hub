@@ -729,6 +729,71 @@ textarea:focus {
   gap: 8px;
 }
 
+/* 一键触发解析：主色强调，引导「未解析 → 解析」这一核心动作。 */
+.paper-actions .parse-trigger {
+  color: #fff;
+  background: var(--primary, #4f6ef7);
+  border-color: var(--primary, #4f6ef7);
+}
+.paper-actions .parse-trigger:hover:not(:disabled) {
+  background: var(--primary-hover, #3d5ce5);
+  border-color: var(--primary-hover, #3d5ce5);
+}
+.paper-actions .parse-trigger:disabled {
+  color: #fff;
+  opacity: 0.65;
+  background: var(--primary, #4f6ef7);
+  cursor: wait;
+}
+
+/* 阅读台目录搜索框 + 文档区上/下一篇导航 */
+.reader-index-filter {
+  padding: 0 var(--space-3, 12px) var(--space-2, 8px);
+}
+.reader-index-filter input {
+  width: 100%;
+}
+
+/* 任务中心筛选 */
+.job-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 var(--space-3, 12px) var(--space-2, 8px);
+}
+.job-filters select {
+  max-width: 200px;
+}
+
+/* 关系视图：按论文过滤 */
+.relations-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.relations-header-row input[type="search"] {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.document-pane-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: var(--space-2, 8px);
+}
+.reader-nav-buttons {
+  display: flex;
+  gap: 8px;
+}
+.reader-nav-buttons .secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .topic-card-actions {
   display: flex;
   flex-wrap: wrap;
