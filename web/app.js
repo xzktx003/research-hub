@@ -125,6 +125,8 @@ const state = {
   loadSeq: 0,
   readerPollToken: 0,
   pdfDownloading: null,
+  browseMode: "date", // "date" = 指定日期论文 | "all" = 全部日期论文
+  allPapersLoading: false,
 };
 
 const endpoints = {
@@ -234,6 +236,7 @@ function bindControls() {
     if (dateInput) dateInput.value = today;
     loadHistoryPapers();
   });
+  document.getElementById("dailyAllDates")?.addEventListener("click", () => setBrowseModeAll());
   document.getElementById("dailyDateFilter")?.addEventListener("change", (event) => setBrowseDateFromInput(event.target.value));
   document.getElementById("createCandidateButton").addEventListener("click", (event) => {
     withButtonLoading(event.currentTarget, createCandidate);
@@ -464,6 +467,24 @@ async function loadAllPapers() {
 }
 
 async function loadHistoryPapers() {
+  // 「所有日期」模式无需再按日期拉取，直接用全量论文库。
+  if (state.browseMode === "all") {
+    state.historyLoading = false;
+    state.historyError = null;
+    if (!state.allPapers.length && !state.allPapersLoading) {
+      state.allPapersLoading = true;
+      try {
+        const data = await apiJson("/papers?all=1");
+        state.allPapers = normalizeList(data, ["papers", "items", "results", "data"]);
+      } finally {
+        state.allPapersLoading = false;
+      }
+    }
+    state.historyPapers = state.allPapers;
+    renderHistoryPapers();
+    renderTopics();
+    return;
+  }
   const dateValue = state.browseDate;
   state.historyLoading = true;
   state.historyError = null;
@@ -471,13 +492,14 @@ async function loadHistoryPapers() {
   try {
     const data = await apiJson(`/papers?date=${encodeURIComponent(dateValue)}`);
     const papers = normalizeList(data, ["papers", "items", "results", "data"]);
-    if (state.browseDate === dateValue) {
+    if (state.browseDate === dateValue && state.browseMode === "date") {
       state.historyPapers = papers;
       state.historyLoading = false;
       renderHistoryPapers();
+      renderTopics();
     }
   } catch (error) {
-    if (state.browseDate === dateValue) {
+    if (state.browseDate === dateValue && state.browseMode === "date") {
       state.historyError = error.message;
       state.historyLoading = false;
       renderHistoryPapers();
@@ -563,6 +585,7 @@ async function runOnlineSearch(query) {
 }
 
 function browseDateBy(days) {
+  state.browseMode = "date";
   const current = new Date(`${state.browseDate}T12:00:00`);
   current.setDate(current.getDate() + days);
   state.browseDate = current.toISOString().slice(0, 10);
@@ -573,8 +596,24 @@ function browseDateBy(days) {
 
 function setBrowseDateFromInput(value) {
   if (!value) return;
+  state.browseMode = "date";
   state.browseDate = value;
   loadHistoryPapers();
+}
+
+// 「所有日期」浏览切换：未激活时进入 all 模式（基于全量论文库统计主题分布）；
+// 已激活时点再次点击可退回当前/今日日期模式，避免用户被困在 all 视图。
+function setBrowseModeAll() {
+  if (state.browseMode === "all") {
+    state.browseMode = "date";
+    state.browseDate = today;
+    const dateInput = document.getElementById("dailyDateFilter");
+    if (dateInput) dateInput.value = today;
+    loadHistoryPapers();
+  } else {
+    state.browseMode = "all";
+    renderDailyBrowse();
+  }
 }
 
 async function loadWorkspace(paperId) {
@@ -1011,7 +1050,13 @@ function renderDailyByTopic(containerId, papers, source) {
     return;
   }
   if (!papers.length) {
-    container.innerHTML = emptyBlock(source === "history" ? "该日期没有论文。可在「触发发现」为该日期补充论文。" : "今日还没有论文。点击右上角「触发发现」获取今日论文。");
+    container.innerHTML = emptyBlock(
+      source === "history"
+        ? (state.browseMode === "all"
+            ? "论文库中还没有已收录的论文。点击右上角「触发发现」获取论文。"
+            : "该日期没有论文。可在「触发发现」为该日期补充论文。")
+        : "今日还没有论文。点击右上角「触发发现」获取今日论文。"
+    );
     return;
   }
   // Build topic -> papers map (a paper may appear under every topic it has).
@@ -1095,7 +1140,8 @@ function toggleTopicPapers(topicId, source) {
     state.expandedTopics.add(topicId);
   }
   if (source === "history") {
-    renderDailyByTopic("historyPapers", state.historyPapers, "history");
+    const papers = state.browseMode === "all" ? state.allPapers : state.historyPapers;
+    renderDailyByTopic("historyPapers", papers, "history");
   } else {
     renderDailyByTopic("dailyPapers", state.papers, "daily");
   }
@@ -1104,6 +1150,7 @@ function toggleTopicPapers(topicId, source) {
 function renderHistoryPapers() {
   const container = document.getElementById("historyPapers");
   const label = document.getElementById("historyDateLabel");
+  syncBrowseControls();
   const searchActive = (document.getElementById("globalSearch")?.value || "").trim();
   if (searchActive) {
     // A live search is active: show the search results panel instead of the
@@ -1116,6 +1163,16 @@ function renderHistoryPapers() {
     container.innerHTML = errorBlock("论文接口不可用，无法读取历史论文。");
     return;
   }
+  if (state.browseMode === "all") {
+    if (state.allPapersLoading) {
+      container.innerHTML = loadingBlock("正在加载全部论文...");
+      return;
+    }
+    if (label) label.textContent = "全部日期";
+    renderDailyByTopic("historyPapers", state.allPapers, "history");
+    renderDigestSummary();
+    return;
+  }
   if (state.historyLoading) {
     container.innerHTML = loadingBlock(`正在读取 ${state.browseDate} 的论文...`);
     return;
@@ -1126,6 +1183,32 @@ function renderHistoryPapers() {
   }
   if (label) label.textContent = state.browseDate;
   renderDailyByTopic("historyPapers", state.historyPapers, "history");
+  // 主题分布面板与主题卡片一起随浏览日期刷新，保证同一屏数据一致。
+  renderDigestSummary();
+}
+
+// 「所有日期」浏览：无需网络请求（全量已缓存在 state.allPapers），直接刷新
+// 历史论文列表与主题统计，并高亮「所有日期」按钮。
+function syncBrowseControls() {
+  const allBtn = document.getElementById("dailyAllDates");
+  if (allBtn) allBtn.classList.toggle("active", state.browseMode === "all");
+  const dateInput = document.getElementById("dailyDateFilter");
+  if (dateInput) dateInput.disabled = state.browseMode === "all";
+  const disabled = state.browseMode === "all";
+  ["dailyPrevDay", "dailyNextDay", "dailyJumpToday"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = disabled;
+  });
+}
+
+function renderDailyBrowse() {
+  syncBrowseControls();
+  if (state.browseMode === "all") {
+    loadHistoryPapers();
+  } else {
+    renderHistoryPapers();
+  }
+  renderTopics();
 }
 
 function paperCards(papers) {
@@ -1149,14 +1232,25 @@ function renderDigestSummary() {
   const sourceRows = Object.entries(state.digest.source_counts || {}).map(
     ([source, count]) => html`<div class="compact-item"><strong>${sourceLabels[source] || source}</strong><span>${count} 次命中</span></div>`,
   );
-  const topicRows = Object.entries(state.digest.topic_distribution || {}).map(
-    ([topicId, count]) => html`<div class="compact-item"><strong>${topicDisplayName(topicId)}</strong><span>${count} 篇</span></div>`,
+  // 主题覆盖统计与主题卡片保持一致：随当前浏览模式（指定日期 / 所有日期）
+  // 基于真实的当前论文集统计，而不是固定在「今日日报」上。
+  const topicOverviews = state.topics
+    .filter((topic) => topic.deleted_at == null)
+    .map((topic) => ({
+      name: topicName(topic),
+      count: topicPaperCount(topic.id),
+    }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const topicRows = topicOverviews.map(
+    ({ name, count }) => html`<div class="compact-item"><strong>${name}</strong><span>${count} 篇</span></div>`,
   );
+  const emptyCountText = state.browseMode === "all" ? "论文库中暂无已收录的主题论文。" : "该日期暂无主题论文。";
   distribution.innerHTML = `
     <h3 class="digest-subheading">来源命中</h3>
     ${[...sourceRows].join("") || emptyBlock("当日暂无来源命中。")}
     <h3 class="digest-subheading spaced">主题覆盖</h3>
-    ${[...topicRows].join("") || emptyBlock("当日暂无主题覆盖。")}
+    ${[...topicRows].join("") || emptyBlock(emptyCountText)}
   `;
   routes.innerHTML = Object.entries(state.digest.reading_routes || {}).map(
     ([route, paperIds]) => html`
@@ -1909,16 +2003,19 @@ function renderTopics() {
   container.innerHTML = state.topics.map((topic) => {
     const expanded = state.selectedTopicDigest && state.selectedTopicDigest.topicId === topic.id;
     const editing = state.editingTopicId === topic.id;
+    const count = topicPaperCount(topic.id);
+    const countLabel = state.browseMode === "all" ? "共 " : "今日 ";
+    const viewLabel = state.browseMode === "all" ? "查看全部论文" : "查看今日论文";
     return html`
       <article class="topic-card">
         <h3>${topicName(topic)}</h3>
         <p>${topic.name_en || topic.description || "无主题说明"}</p>
         <div>${raw(normalizeKeywords(topic).map((keyword) => html`<span class="tag">${keyword}</span>`).join(" "))}</div>
-        <p class="meta">今日 ${state.digest?.topic_distribution?.[topic.id] || 0} 篇</p>
+        <p class="meta">${countLabel}${count} 篇</p>
         <div class="topic-card-actions">
           <button class="secondary" type="button" data-topic-edit="${topic.id}" title="编辑该主题">编辑</button>
           <button class="secondary ${expanded ? "active" : ""}" type="button" data-topic-digest="${topic.id}">${expanded ? "收起摘要" : "查看主题摘要"}</button>
-          <button class="secondary" type="button" data-topic-papers="${topic.id}" title="跳转到论文库并筛选该主题">查看今日论文</button>
+          <button class="secondary" type="button" data-topic-papers="${topic.id}" title="跳转到论文库并筛选该主题">${viewLabel}</button>
           <button class="danger-secondary" type="button" data-topic-delete="${topic.id}" title="删除该主题">删除</button>
         </div>
         ${editing ? raw(renderTopicEditForm(topic)) : ""}
@@ -4023,6 +4120,37 @@ function paperTopicObjs(paper) {
     else if (typeof item === "string") ids.add(item);
   });
   return state.topics.filter((topic) => ids.has(topic.id));
+}
+
+// 当前浏览基准论文集：date 模式用浏览日期的论文，all 模式用全量论文库。
+// 这是主题卡片数字、主题覆盖统计等的统一来源，保证切换日期时主题数量随之变化。
+// 默认/今日视图时 state.papers（今日论文，loadAll 已加载）即为当日论文；
+// 浏览历史日期时 historyPapers 已按 browseDate 拉取，使用它（可为空=该日无论文）。
+function activeBrowsePapers() {
+  if (state.browseMode === "all") return state.allPapers || [];
+  const browsingToday = state.browseDate === today;
+  if (state.historyPapers && state.historyPapers.length) return state.historyPapers;
+  if (browsingToday) return state.papers || [];
+  return state.historyPapers || [];
+}
+
+// 统计某主题在当前浏览基准下的论文数。与 renderDailyByTopic 的分组逻辑一致：
+// 一篇论文只统计一次（按论文的 topics 精确匹配），父/子主题各自按其自身 id 计数。
+// 若主题在基准中一篇都没有，回退到今日日报中的命中数（用于「今日」默认视图）。
+function topicPaperCount(topicId) {
+  const papers = activeBrowsePapers();
+  let count = 0;
+  const seen = new Set();
+  papers.forEach((paper) => {
+    const pid = paper?.id || paper?.paper_id || "";
+    if (seen.has(pid)) return;
+    const topics = paperTopicObjs(paper);
+    if (topics.some((topic) => topic.id === topicId)) {
+      seen.add(pid);
+      count += 1;
+    }
+  });
+  return count;
 }
 
 function normalizeKeywords(topic) {
