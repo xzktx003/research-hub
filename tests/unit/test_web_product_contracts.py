@@ -444,7 +444,10 @@ def test_directed_discovery_supports_topic_window_and_count() -> None:
     assert "auto_process: autoProcess" in app
     # Backdrop click and Escape close the overlays.
     assert "function bindOverlays" in app
-    assert "event.key !== \"Escape\"" in app
+    assert "event.key === \"Escape\"" in app
+    # The open modal keeps focus inside (focus trap) and restores it on close.
+    assert "function _focusOverlay" in app
+    assert "function _unfocusOverlay" in app
 
 
 def test_run_discovery_uses_lookback_window_not_single_day() -> None:

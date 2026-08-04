@@ -122,6 +122,8 @@ const state = {
   batchSelected: new Set(),
   jobsPollTimer: null,
   jobsPolling: false,
+  loadSeq: 0,
+  readerPollToken: 0,
 };
 
 const endpoints = {
@@ -211,12 +213,18 @@ function bindControls() {
     state.batchSelected.clear();
     updateBatchSelectionUi();
   });
-  document.getElementById("runDiscoveryButton").addEventListener("click", runDiscovery);
+  document.getElementById("runDiscoveryButton").addEventListener("click", (event) => {
+    withButtonLoading(event.currentTarget, runDiscovery);
+  });
   document.getElementById("helpButton").addEventListener("click", openHelp);
   document.getElementById("helpCloseButton").addEventListener("click", closeHelp);
   document.getElementById("directedDiscoveryButton").addEventListener("click", openDirectedDiscovery);
   document.getElementById("directedCloseButton").addEventListener("click", closeDirectedDiscovery);
-  document.getElementById("directedForm").addEventListener("submit", submitDirectedDiscovery);
+  document.getElementById("directedForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const submit = document.getElementById("directedSubmitButton");
+    withButtonLoading(submit, () => submitDirectedDiscovery(event));
+  });
   document.getElementById("dailyPrevDay")?.addEventListener("click", () => browseDateBy(-1));
   document.getElementById("dailyNextDay")?.addEventListener("click", () => browseDateBy(1));
   document.getElementById("dailyJumpToday")?.addEventListener("click", () => {
@@ -226,7 +234,9 @@ function bindControls() {
     loadHistoryPapers();
   });
   document.getElementById("dailyDateFilter")?.addEventListener("change", (event) => setBrowseDateFromInput(event.target.value));
-  document.getElementById("createCandidateButton").addEventListener("click", createCandidate);
+  document.getElementById("createCandidateButton").addEventListener("click", (event) => {
+    withButtonLoading(event.currentTarget, createCandidate);
+  });
   document.getElementById("downloadDraftButton").addEventListener("click", () => downloadSelectedDraft("markdown"));
   document.getElementById("downloadDraftDocxButton")?.addEventListener("click", () => downloadSelectedDraft("docx"));
   document.getElementById("saveAnalysisConfigButton")?.addEventListener("click", saveAnalysisConfig);
@@ -269,6 +279,11 @@ function setDateDefaults() {
 }
 
 function switchView(view, updateHistory = true) {
+  // Reset scroll so a deep-scrolled reader/paper view doesn't leave the next
+  // view starting mid-page.
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  // Leaving the reader cancels any in-flight reading-report polling.
+  if (state.activeView === "reader" && view !== "reader") state.readerPollToken++;
   state.activeView = view;
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   document.querySelectorAll(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
@@ -376,6 +391,9 @@ function applyRoute(pathname, updateHistory = false) {
 }
 
 async function loadAll() {
+  // Guard against overlapping loads: a slow earlier request must not clobber a
+  // newer one that the user triggered afterwards (race: last-writer-wins).
+  const seq = ++state.loadSeq;
   state.loading = true;
   renderLoading();
 
@@ -387,6 +405,7 @@ async function loadAll() {
 
   const keys = Object.keys(endpoints);
   const results = await Promise.all(keys.map((key) => firstJson(key, endpoints[key])));
+  if (seq !== state.loadSeq) return; // a newer load superseded this one
   keys.forEach((key, index) => {
     state.endpointResults[key] = results[index];
   });
@@ -400,6 +419,7 @@ async function loadAll() {
   state.jobs = normalizeList(state.endpointResults.jobs.data, ["jobs", "items", "results", "data"]);
   state.candidates = normalizeList(state.endpointResults.candidates.data, ["candidates", "items", "results", "data"]);
   state.drafts = normalizeList(state.endpointResults.drafts.data, ["drafts", "items", "results", "data"]);
+  if (seq !== state.loadSeq) return; // a newer load superseded this one
   state.digest = state.endpointResults.digest.data;
   state.workflows = state.endpointResults.workflows.data;
   state.runtimeConfig = state.endpointResults.runtimeConfig.data;
@@ -409,6 +429,11 @@ async function loadAll() {
   state.selectedPaperId = state.selectedPaperId || null;
   state.selectedCandidateId = state.selectedCandidateId || state.candidates[0]?.id || null;
   state.selectedDraftId = state.selectedDraftId || state.drafts[0]?.id || null;
+  if (seq !== state.loadSeq) {
+    // A newer load superseded this one; hand loading back to that newer call.
+    state.loading = false;
+    return;
+  }
 
   state.loading = false;
   render();
@@ -424,12 +449,16 @@ async function loadAll() {
 async function loadAllPapers() {
   // Pull the full paper library (all dates) so the library view and history
   // browsing work across the whole corpus, independent of the selected day.
+  const seq = state.loadSeq;
   try {
     const data = await apiJson("/papers?all=1");
+    if (seq !== state.loadSeq) return; // superseded by a newer load
     state.allPapers = normalizeList(data, ["papers", "items", "results", "data"]);
   } catch {
+    if (seq !== state.loadSeq) return;
     state.allPapers = [...state.papers];
   }
+  if (seq !== state.loadSeq) return;
   renderPaperLibrary();
 }
 
@@ -573,17 +602,22 @@ async function requestReadingReport(versionId) {
   }
   state.workspaces.set(paperId, { ...workspace, reportGenerating: true, reportError: null, report: null });
   renderReader();
+  const token = ++state.readerPollToken;
   try {
     await apiJson(`/paper-versions/${encodeURIComponent(versionId)}/analyze`, {
       method: "POST",
       headers: { "Idempotency-Key": `web-reading-report-${versionId}` },
       body: JSON.stringify({ force: true }),
     });
-    // 轮询 workspace 直到 report 出现或超时（最多 ~5 分钟）。
+    // Poll workspace until the report appears or times out (~5 min). The token
+    // is bumped by switchView/openPaper so leaving the reader cancels the loop
+    // instead of polling a background paper for minutes.
     const deadline = Date.now() + 5 * 60 * 1000;
     let lastError = "";
     for (;;) {
+      if (token !== state.readerPollToken || state.activeView !== "reader") return;
       await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (token !== state.readerPollToken || state.activeView !== "reader") return;
       let current;
       try {
         current = await apiJson(`/papers/${encodeURIComponent(paperId)}/workspace`);
@@ -1179,7 +1213,15 @@ function renderRecommendedReading() {
     </article>
   `).join("");
   container.querySelectorAll("[data-recommend-open]").forEach((el) => {
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
     el.addEventListener("click", () => openPaper(el.dataset.recommendOpen));
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openPaper(el.dataset.recommendOpen);
+      }
+    });
   });
 }
 
@@ -1198,7 +1240,10 @@ function renderPaperList(containerId, papers) {
       const hasActiveFilters = Boolean(
         (document.getElementById("globalSearch")?.value || "").trim()
         || document.getElementById("topicFilter")?.value
-        || document.getElementById("statusFilter")?.value,
+        || document.getElementById("statusFilter")?.value
+        || document.getElementById("sortFilter")?.value
+        || document.getElementById("dateFilter")?.value
+        || state.batchSelected.size,
       );
       if (hasActiveFilters) {
         // Offer a one-click escape hatch from an empty filtered result.
@@ -1219,9 +1264,21 @@ function renderPaperList(containerId, papers) {
 
 // Reset all paper-library filters back to defaults and re-render.
 function clearPaperFilters() {
-  document.getElementById("globalSearch").value = "";
-  document.getElementById("topicFilter").value = "";
-  document.getElementById("statusFilter").value = "";
+  const searchEl = document.getElementById("globalSearch");
+  const topicEl = document.getElementById("topicFilter");
+  const statusEl = document.getElementById("statusFilter");
+  const sortEl = document.getElementById("sortFilter");
+  const dateEl = document.getElementById("dateFilter");
+  if (searchEl) searchEl.value = "";
+  if (topicEl) topicEl.value = "";
+  if (statusEl) statusEl.value = "";
+  if (sortEl) sortEl.value = "";
+  // Also clear the browse-by-date so "查看全部" truly shows the full corpus
+  // instead of remaining empty because an old date filter is still applied.
+  if (dateEl) {
+    dateEl.value = "";
+    state.browseDate = new Date().toISOString().slice(0, 10);
+  }
   renderPaperLibrary();
 }
 
@@ -1287,13 +1344,25 @@ function bindPaperCardActions(container) {
     button.addEventListener("click", () => togglePatentSelection(button.dataset.selectPatent));
   });
   container.querySelectorAll("[data-toggle-card]").forEach((header) => {
-    header.addEventListener("click", () => {
+    const toggleCard = () => {
       const paperId = header.dataset.toggleCard;
       const body = document.getElementById(`paper-body-${paperId}`);
       const icon = document.getElementById(`expand-${paperId}`);
       if (body && icon) {
-        body.classList.toggle("hidden");
-        icon.classList.toggle("expanded", !body.classList.contains("hidden"));
+        const collapsed = body.classList.toggle("hidden");
+        icon.classList.toggle("expanded", !collapsed);
+        header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      }
+    };
+    // Make the clickable header reachable and operable by keyboard.
+    header.setAttribute("role", "button");
+    header.setAttribute("tabindex", "0");
+    header.setAttribute("aria-expanded", "false");
+    header.addEventListener("click", toggleCard);
+    header.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleCard();
       }
     });
   });
@@ -1322,18 +1391,24 @@ function updateBatchSelectionUi() {
   });
 }
 
-function batchAddToNotebook() {
+async function batchAddToNotebook() {
   const ids = Array.from(state.batchSelected);
   if (!ids.length) {
     showAlert("请先选择要加入笔记本的论文。");
     return;
   }
-  ids.forEach((id) => {
-    if (!state.notebookPapers.has(id)) toggleNotebook(id);
-  });
+  // Await the server round-trip for each so the success message reflects what
+  // actually persisted, instead of optimistically claiming success up-front.
+  const results = await Promise.allSettled(ids.map((id) => toggleNotebook(id)));
+  const ok = results.filter((r) => r.status === "fulfilled").length;
+  const failed = results.length - ok;
   state.batchSelected.clear();
   updateBatchSelectionUi();
-  showAlert(`已将 ${ids.length} 篇论文加入笔记本。`);
+  if (failed === 0) {
+    showAlert(`已将 ${ok} 篇论文加入笔记本。`);
+  } else {
+    showAlert(`已加入 ${ok} 篇，${failed} 篇加入失败，请稍后重试。`);
+  }
 }
 
 // "相似论文" —— 基于共同主题 + 标题/摘要关键词的本地相似度（borrowed from
@@ -1354,18 +1429,26 @@ function showSimilarPapers(paperId) {
   const wrap = document.createElement("div");
   wrap.className = "similar-papers";
   wrap.innerHTML = html`
-    <div class="similar-papers-head"><strong>相似论文（基于共同主题与关键词）</strong></div>
+    <div class="similar-papers-head"><strong>相似论文（相关度为相对排序，非绝对相似度）</strong></div>
     ${similar.length
       ? raw(similar.map((item) => `
         <div class="similar-paper-row" data-similar-open="${getPaperId(item)}">
-          <span class="similar-score">${item.similarity}</span>
+          <span class="similar-score" title="相关度（相对最高分归一化）">${item.similarity}</span>
           <span class="similar-title">${escapeHtml(paperTitle(item))}</span>
         </div>
       `).join(""))
       : raw(`<p class="meta">未找到明显相似的论文。</p>`)}
   `;
   wrap.querySelectorAll("[data-similar-open]").forEach((row) => {
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
     row.addEventListener("click", () => openPaper(row.dataset.similarOpen));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openPaper(row.dataset.similarOpen);
+      }
+    });
   });
   body.appendChild(wrap);
 }
@@ -1408,6 +1491,9 @@ function significantTokens(text) {
 }
 
 function openPaper(paperId) {
+  // Switching to a different paper cancels any background report poll on the
+  // previous paper.
+  state.readerPollToken++;
   state.selectedPaperId = paperId;
   history.pushState({ view: "reader", paper: paperId }, "", `/papers/${encodeURIComponent(paperId)}/read`);
   switchView("reader", false);
@@ -2591,16 +2677,16 @@ function renderDraftPreview() {
     });
   });
   preview.querySelectorAll("[data-candidate-approve]").forEach((button) => {
-    button.addEventListener("click", () => approveCandidate(button.dataset.candidateApprove, false));
+    button.addEventListener("click", () => withButtonLoading(button, () => approveCandidate(button.dataset.candidateApprove, false)));
   });
   preview.querySelectorAll("[data-candidate-override]").forEach((button) => {
-    button.addEventListener("click", () => approveCandidate(button.dataset.candidateOverride, true));
+    button.addEventListener("click", () => withButtonLoading(button, () => approveCandidate(button.dataset.candidateOverride, true)));
   });
   preview.querySelectorAll("[data-candidate-prior-art]").forEach((button) => {
-    button.addEventListener("click", () => runPriorArtCheck(button.dataset.candidatePriorArt));
+    button.addEventListener("click", () => withButtonLoading(button, () => runPriorArtCheck(button.dataset.candidatePriorArt)));
   });
   preview.querySelectorAll("[data-candidate-draft]").forEach((button) => {
-    button.addEventListener("click", () => generateDraft(button.dataset.candidateDraft));
+    button.addEventListener("click", () => withButtonLoading(button, () => generateDraft(button.dataset.candidateDraft)));
   });
   preview.querySelectorAll("[data-draft-select]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2815,17 +2901,37 @@ function renderAdapterHealth(containerId) {
   container.innerHTML = adapters.length ? adapters.map(adapterHealthCard).join("") : emptyBlock("健康接口未返回适配器明细。");
 }
 
+// Compose the text a paper search should match against. We deliberately avoid
+// JSON.stringify(paper) (which matched hidden ids/dates/metadata too broadly) and
+// instead match the human-meaningful fields only.
+function paperSearchableText(paper) {
+  return [
+    paper?.canonical_title,
+    paper?.title,
+    (paper?.authors || []).map((a) => (typeof a === "string" ? a : a?.name)).join(" "),
+    (paper?.identifiers || []).map((i) => i?.value).join(" "),
+    paper?.abstract,
+    paper?.translated_abstract,
+    paper?.method_summary,
+    (paper?.topics || []).map((t) => (typeof t === "string" ? t : `${t?.name_zh || ""} ${t?.name_en || ""}`)).join(" "),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
 function filteredPapers() {
   const query = document.getElementById("globalSearch")?.value.trim().toLowerCase() || "";
   const topic = document.getElementById("topicFilter")?.value || "";
   const status = document.getElementById("statusFilter")?.value || "";
   const sortBy = document.getElementById("sortFilter")?.value || "";
-  const source = state.allPapers.length ? state.allPapers : state.papers;
-  // 论文库默认展示全部日期论文；用主题 / 状态 / 搜索过滤即可。
-  // 如需按日期浏览，可使用「日期」输入框通过 loadAll 重新加载特定日期。
+  // When a specific date is selected it is backed by loadAll(), which loads the
+  // date-scoped papers into state.papers; prefer that so the '日期' filter
+  // actually narrows the library grid instead of silently doing nothing.
+  // When a specific date is selected it is backed by loadAll(), which loads the
+  // date-scoped papers into state.papers; prefer that so the '日期' filter
+  // actually narrows the library grid instead of silently doing nothing.
+  const dateValue = document.getElementById("dateFilter")?.value || "";
+  const source = dateValue ? state.papers : (state.allPapers.length ? state.allPapers : state.papers);
   const filtered = source.filter((paper) => {
-    const id = getPaperId(paper);
-    const text = JSON.stringify(paper).toLowerCase();
+    const text = paperSearchableText(paper);
     const topics = normalizeTopics(paper);
     const paperStatus = String(paper.status || "").toLowerCase();
     return (!query || text.includes(query))
@@ -2953,9 +3059,14 @@ async function runDiscovery() {
   const startDate = addDays(selectedDate, -(lookback - 1));
   const windowStart = `${startDate}T00:00:00`;
   const windowEnd = `${selectedDate}T23:59:59`;
-  const topicIds = state.topics.filter((topic) => topic.enabled !== false).slice(0, 6).map((topic) => topic.id);
+  const enabledTopics = state.topics.filter((topic) => topic.enabled !== false);
+  const topicIds = enabledTopics.slice(0, 6).map((topic) => topic.id);
   try {
-    showAlert(`正在提交发现任务（回溯 ${lookback} 天）...`);
+    if (enabledTopics.length > 6) {
+      showAlert(`注意：本次发现仅覆盖前 6 个启用主题（共 ${enabledTopics.length} 个），其余主题请用「定向发现」单独跑。`);
+    } else {
+      showAlert(`正在提交发现任务（回溯 ${lookback} 天）...`);
+    }
     await apiJson("/discovery-runs", {
       method: "POST",
       headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}` },
@@ -3044,15 +3155,37 @@ function renderHelpContent() {
   document.getElementById("helpContent").innerHTML = content;
 }
 
+// Keyboard-accessible overlay lifecycle. Maintains a simple focus trap: focus
+// moves into the dialog on open, Tab cycles inside the panel, and focus is
+// returned to the element that opened it on close.
+function _focusOverlay(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  if (!overlay) return;
+  overlay.classList.remove("hidden");
+  document.body.classList.add("has-overlay");
+  const panel = overlay.querySelector(".overlay-panel");
+  const first = panel?.querySelector("button, input, select, textarea, [href], [tabindex]:not([tabindex='-1'])");
+  if (first) first.focus();
+  else if (panel) { panel.setAttribute("tabindex", "-1"); panel.focus(); }
+  overlay._lastFocus = document.activeElement === overlay ? null : document.activeElement;
+}
+
+function _unfocusOverlay(overlay) {
+  overlay.classList.add("hidden");
+  document.body.classList.remove("has-overlay");
+  if (overlay._lastFocus && typeof overlay._lastFocus.focus === "function") {
+    overlay._lastFocus.focus();
+  }
+  overlay._lastFocus = null;
+}
+
 function openHelp() {
   renderHelpContent();
-  document.getElementById("helpOverlay").classList.remove("hidden");
-  document.body.classList.add("has-overlay");
+  _focusOverlay("helpOverlay");
 }
 
 function closeHelp() {
-  document.getElementById("helpOverlay").classList.add("hidden");
-  document.body.classList.remove("has-overlay");
+  _unfocusOverlay(document.getElementById("helpOverlay"));
 }
 
 function openDirectedDiscovery() {
@@ -3064,13 +3197,11 @@ function openDirectedDiscovery() {
   document.getElementById("directedEndDate").value = document.getElementById("dateFilter").value || today;
   document.getElementById("directedMaxResults").value = 20;
   document.getElementById("directedAutoProcess").checked = true;
-  document.getElementById("directedDiscoveryOverlay").classList.remove("hidden");
-  document.body.classList.add("has-overlay");
+  _focusOverlay("directedDiscoveryOverlay");
 }
 
 function closeDirectedDiscovery() {
-  document.getElementById("directedDiscoveryOverlay").classList.add("hidden");
-  document.body.classList.remove("has-overlay");
+  _unfocusOverlay(document.getElementById("directedDiscoveryOverlay"));
 }
 
 async function submitDirectedDiscovery(event) {
@@ -3114,17 +3245,38 @@ function bindOverlays() {
   document.querySelectorAll(".overlay").forEach((overlay) => {
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay) {
-        overlay.classList.add("hidden");
-        document.body.classList.remove("has-overlay");
+        _unfocusOverlay(overlay);
       }
     });
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    document.querySelectorAll(".overlay:not(.hidden)").forEach((overlay) => {
-      overlay.classList.add("hidden");
-    });
-    document.body.classList.remove("has-overlay");
+    if (event.key === "Escape") {
+      document.querySelectorAll(".overlay:not(.hidden)").forEach((overlay) => {
+        _unfocusOverlay(overlay);
+      });
+      return;
+    }
+    // Simple focus trap for the open modal: keep Tab within the panel.
+    if (event.key === "Tab") {
+      const open = [...document.querySelectorAll(".overlay:not(.hidden)")].filter(
+        (o) => document.body.classList.contains("has-overlay"),
+      );
+      const overlay = open[open.length - 1];
+      if (!overlay) return;
+      const panel = overlay.querySelector(".overlay-panel");
+      if (!panel) return;
+      const focusables = panel.querySelectorAll("button, input, select, textarea, [href], [tabindex]:not([tabindex='-1'])");
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   });
   document.addEventListener("keydown", handleReaderShortcuts);
 }
@@ -3438,6 +3590,25 @@ function showAlert(message) {
   toast.appendChild(text);
   toast.appendChild(close);
   _alertDismissTimer = setTimeout(() => dismissAlert(toast, close), 4 * 1000);
+}
+
+// Disable a button and show a "处理中" state while an async action runs, then
+// restore it. Prevents double-submits of strong business actions (candidate
+// approval, draft generation, discovery submission, prior-art checks).
+async function withButtonLoading(button, fn) {
+  if (!button || button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.classList.add("is-loading");
+  button.setAttribute("aria-busy", "true");
+  try {
+    await fn();
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-loading");
+    button.removeAttribute("aria-busy");
+    button.textContent = original;
+  }
 }
 
 function endpointOk(key) {

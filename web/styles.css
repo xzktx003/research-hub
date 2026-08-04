@@ -1,8 +1,9 @@
 :root {
+  color-scheme: light;
   --bg: #f7f4ec;
   --panel: #ffffff;
   --ink: #17201b;
-  --muted: #69746e;
+  --muted: #5d665f;
   --line: #d9e1dc;
   --green: #16744b;
   --green-weak: #e5f4ed;
@@ -381,6 +382,12 @@ textarea {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
+}
+
+/* Dashboard metrics: 5 cards usually — auto-fit prevents a lone orphan card in
+   the last row and keeps the tiles evenly spaced at narrow widths. */
+.metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .settings-grid {
@@ -772,6 +779,14 @@ textarea {
 .evidence-list {
   white-space: pre-wrap;
   line-height: 1.68;
+}
+
+/* Patent workspace draft preview: limit height so a long draft doesn't stretch
+   the three-column layout out of proportion; scroll within the panel instead. */
+#selectedDraftBody {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 8px;
 }
 
 .evidence-row {
@@ -1925,6 +1940,7 @@ html.font-xlarge  { zoom: 1.25; }
 
 /* ---- 夜间模式（.theme-dark 覆盖 CSS 变量）---- */
 html.theme-dark {
+  color-scheme: dark;
   --bg: #12161c;
   --panel: #1b212b;
   --ink: #e6ecf2;
@@ -1952,6 +1968,33 @@ html.theme-dark body {
 }
 html.theme-dark a {
   color: #7fb0f2;
+}
+
+/* Night-mode: convert literal white surfaces to theme variables so dark mode
+   doesn't leave "white patches" on cards/tabs/buttons that forgot the vars. */
+html.theme-dark .compact-button,
+html.theme-dark .tab,
+html.theme-dark .stage-card,
+html.theme-dark .workflow-run,
+html.theme-dark .topic-note-input,
+html.theme-dark .pipeline-run-card,
+html.theme-dark .paper-card,
+html.theme-dark .batch-bar,
+html.theme-dark .recommended-item,
+html.theme-dark .similar-panel,
+html.theme-dark .markdown-body,
+html.theme-dark .draft-preview,
+html.theme-dark .metric-button,
+html.theme-dark .metric-card,
+html.theme-dark .panel,
+html.theme-dark .view-toolbar {
+  background: var(--panel);
+}
+
+/* Is-loading button: show an interminate spinner on the left, rest cursor. */
+.is-loading {
+  cursor: progress;
+  opacity: 0.75;
 }
 
 /* ---- 论文卡片元数据增强（引用/代码/外部链接/相似论文）---- */
