@@ -298,6 +298,7 @@ class ResearchJobService:
         version = self.repo.get_paper_version(job.target_id)
         pdf_path = self._resolve_pdf_path(version.id, job.request)
         if pdf_path is None:
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(
                 job.id,
                 AdapterResult.failed(
@@ -343,6 +344,7 @@ class ResearchJobService:
         job = self.repo.get_job(job_id)
         self._require_job(job.kind, "parse", job_id)
         if not job.external_task_id:
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(
                 job.id,
                 AdapterResult.failed("Parse job has no MinerU external task id", job_id=job.id),
@@ -351,6 +353,7 @@ class ResearchJobService:
         if status_result.status != "ok":
             if self._is_mineru_missing_task(status_result):
                 return self._recover_missing_mineru_task(job, status_result)
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(job.id, status_result, external_task_id=job.external_task_id)
         response = status_result.data.get("response")
         external = response if isinstance(response, dict) else {}
@@ -370,6 +373,7 @@ class ResearchJobService:
             )
             return {"job_id": job.id, "status": "running", "result": result, "error": {}}
         if state != "completed":
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(
                 job.id,
                 AdapterResult.failed(
@@ -385,6 +389,7 @@ class ResearchJobService:
             if package.status != "ok":
                 if self._is_mineru_missing_task(package):
                     return self._recover_missing_mineru_task(job, package)
+                self._rollback_parse_paper(job)
                 return self._finish_adapter_job(
                     job.id,
                     package,
@@ -392,6 +397,7 @@ class ResearchJobService:
                 )
             manifest = package.data.get("manifest")
             if not isinstance(manifest, dict):
+                self._rollback_parse_paper(job)
                 return self._finish_adapter_job(
                     job.id,
                     AdapterResult.failed("MinerU result did not include a manifest"),
@@ -421,6 +427,7 @@ class ResearchJobService:
 
         markdown_path = str(external.get("markdown_path") or "")
         if not markdown_path:
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(
                 job.id,
                 AdapterResult.failed("MinerU completed without a markdown artifact", response=external),
@@ -435,6 +442,7 @@ class ResearchJobService:
         output = artifact_root / "mineru" / job.target_id / Path(markdown_path).name
         download = self.parser_adapter.download_markdown(markdown_path, output)
         if download.status != "ok":
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(job.id, download, external_task_id=job.external_task_id)
         artifact = self.repo.create_artifact_for_version(
             job.target_id,
@@ -500,6 +508,23 @@ class ResearchJobService:
             )
         )
 
+    def _rollback_parse_paper(self, job: Any) -> None:
+        """Reset a paper out of the in-flight 'parse_submitted' state when its
+        parse job reaches a terminal failure (or recovery is exhausted). Without
+        this the paper is left stuck mid-parse with no automatic recovery path."""
+        try:
+            version = self.repo.get_paper_version(job.target_id)
+            self.conn.execute(
+                "UPDATE paper SET status = 'downloaded', updated_at = ? WHERE id = ?",
+                (utcnow(), version.paper_id),
+            )
+        except Exception:  # noqa: BLE001 - rollback is best-effort
+            import logging
+
+            logging.getLogger("research_hub.services").exception(
+                "failed to roll back paper parse status", extra={"job_id": job.id}
+            )
+
     def _recover_missing_mineru_task(self, job: Any, missing_result: AdapterResult) -> dict[str, Any]:
         previous_task_id = str(job.external_task_id or "")
         recovery = self._mineru_recovery_metadata(job.result)
@@ -514,6 +539,7 @@ class ResearchJobService:
                     "last_missing_task_id": previous_task_id,
                 },
             }
+            self._rollback_parse_paper(job)
             return self._finish_adapter_job(
                 job.id,
                 AdapterResult.failed(message, **error),
@@ -781,6 +807,15 @@ class ResearchJobService:
         payload = self._finish_adapter_job(job.id, result)
         if result.status == "ok":
             translated_zh, translated_bilingual = self._translation_outputs(result, markdown)
+            if not translated_zh:
+                # The provider reported success but returned no translation text.
+                # Treat this as retryable (mirrors the abstract branch) instead of
+                # marking the paper as translated with nothing to show.
+                error = {"message": "LLM response did not contain a Chinese translation"}
+                self._mark_job(job.id, "retryable_failed", result=payload["result"], error=error)
+                payload["status"] = "retryable_failed"
+                payload["error"] = error
+                return payload
             if translated_zh:
                 source_artifact_id = next(
                     (
@@ -1105,6 +1140,29 @@ class ResearchJobService:
         job = self._claim_job(job_id)
         if job is None:
             return self._job_snapshot(self.repo.get_job(job_id))
+        try:
+            return self._run_job_inner(job)
+        except Exception as exc:  # noqa: BLE001 - never leave a job stuck 'running'
+            # Wrap the whole execution in a safety net. Without this, an
+            # unexpected exception (e.g. sqlite3.OperationalError from a long
+            # transaction colliding with another writer) would leave the job
+            # permanently stuck in 'running' with nobody to recover it.
+            import logging
+
+            logging.getLogger("research_hub.services").exception(
+                "job execution raised unexpected error", extra={"job_id": job.id, "kind": job.kind}
+            )
+            error = {"message": f"Unexpected job execution error: {exc}"}
+            try:
+                self._mark_job(job.id, "retryable_failed", error=error)
+            except Exception:  # noqa: BLE001
+                logging.getLogger("research_hub.services").exception(
+                    "failed to mark job retryable_failed after execution error",
+                    extra={"job_id": job.id},
+                )
+            return {"job_id": job.id, "status": "retryable_failed", "result": {}, "error": error}
+
+    def _run_job_inner(self, job: Any) -> dict[str, Any]:
         if job.kind == "discover":
             return self.run_discovery_run(job.target_id)
         if job.kind == "download":
@@ -2042,6 +2100,23 @@ class ResearchJobService:
         captured into ``analysis_error`` instead of being re-raised so it never
         breaks the job workflow itself.
         """
+        # Throttle per-kind failure diagnosis within this process so a burst of
+        # failures (e.g. an upstream outage) cannot amplify LLM load by issuing
+        # a fresh chat call for every failed job in the same window.
+        import time as _time
+
+        now_ms = int(_time.monotonic() * 1000)
+        last = getattr(self, "_failure_analysis_last_ms", {})
+        window = 600_000  # 10 minutes per kind
+        if now_ms - last.get(kind, 0) < window:
+            return {
+                "generated_by": "openai",
+                "available": False,
+                "reason": "同类失败的自动诊断已限流（10 分钟内仅一次），请查看原始错误",
+            }
+        last[kind] = now_ms
+        self._failure_analysis_last_ms = last
+
         analysis = self.runtime_config.get("analysis") or {}
         provider = str(analysis.get("provider") or "openai")
         if provider != "openai":

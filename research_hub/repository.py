@@ -1851,6 +1851,63 @@ class Repository:
             current_version=current_version,
         )
 
+    def get_papers_detail(self, papers: list[Paper]) -> list[PaperDetail]:
+        """Bulk version of `get_paper` for list endpoints.
+
+        Loads identifiers, topics and current versions for a batch of papers
+        using one query per relation instead of O(n) queries in `get_paper`,
+        eliminating the N+1 pattern on paper listing/search endpoints.
+        """
+        if not papers:
+            return []
+        ids = [p.id for p in papers]
+        paper_by_id = {p.id: p for p in papers}
+        markers = ",".join("?" for _ in ids)
+
+        identifier_rows = self.conn.execute(
+            f"SELECT paper_id, identifier_type, identifier_value FROM paper_identifier WHERE paper_id IN ({markers})",
+            ids,
+        ).fetchall()
+        identifiers: dict[str, list[PaperIdentifier]] = {pid: [] for pid in ids}
+        for item in identifier_rows:
+            identifiers.setdefault(item["paper_id"], []).append(
+                PaperIdentifier(type=item["identifier_type"], value=item["identifier_value"])
+            )
+
+        topic_rows = self.conn.execute(
+            f"""
+            SELECT pt.paper_id, t.* FROM topic t
+            JOIN paper_topic pt ON pt.topic_id = t.id
+            WHERE pt.paper_id IN ({markers})
+            ORDER BY t.id
+            """,
+            ids,
+        ).fetchall()
+        topics: dict[str, list[Any]] = {pid: [] for pid in ids}
+        for item in topic_rows:
+            topics.setdefault(item["paper_id"], []).append(row_to_topic(item))
+
+        version_ids = [p.current_version_id for p in papers if p.current_version_id]
+        versions: dict[str, Any] = {}
+        if version_ids:
+            vmarkers = ",".join("?" for _ in version_ids)
+            version_rows = self.conn.execute(
+                f"SELECT * FROM paper_version WHERE id IN ({vmarkers})",
+                version_ids,
+            ).fetchall()
+            for row in version_rows:
+                versions[row["id"]] = row_to_version(row)
+
+        return [
+            PaperDetail(
+                **paper_by_id[pid].model_dump(),
+                identifiers=identifiers.get(pid, []),
+                topics=topics.get(pid, []),
+                current_version=versions.get(paper_by_id[pid].current_version_id),
+            )
+            for pid in ids
+        ]
+
     def get_paper_workspace(self, paper_id: str) -> dict[str, Any]:
         """Return the complete read-only paper workspace in one transaction."""
 

@@ -595,7 +595,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 limit=limit if limit is not None else 5000,
                 offset=offset,
             )
-        return [repository.get_paper(paper.id).model_dump(mode="json") for paper in papers]
+        return [paper.model_dump(mode="json") for paper in repository.get_papers_detail(papers)]
 
     @app.get("/api/v1/papers/search")
     def search_papers(
@@ -614,7 +614,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
           discovery for the query and return the hits flagged with `remote: true`.
         """
         query = (q or "").strip()
-        local = [repository.get_paper(paper.id).model_dump(mode="json") for paper in repository.search_papers(query, limit=limit)]
+        local = [paper.model_dump(mode="json") for paper in repository.get_papers_detail(repository.search_papers(query, limit=limit))]
         if local:
             return {"query": query, "items": local, "total": len(local), "remote": False, "remote_searched": False}
         if not query or not online:

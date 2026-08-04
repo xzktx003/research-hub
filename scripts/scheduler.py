@@ -113,9 +113,18 @@ def main(argv: list[str] | None = None) -> int:
                     record_job_result(item)
                 payload = {"items": items}
             elif args.command == "worker":
+                _config_cache_at = 0.0
+                _last_metrics_at = 0.0
+                _discovery_last_attempt: dict[str, float] = {}
                 while True:
                     with trace_context():
-                        active_schedule = load_runtime_config()["schedule"]
+                        # Cache the runtime config briefly instead of reloading +
+                        # re-instantiating services on every loop iteration.
+                        now_wall = time.monotonic()
+                        if now_wall - _config_cache_at >= 30:
+                            runtime_schedule = load_runtime_config()["schedule"]
+                            _config_cache_at = now_wall
+                        active_schedule = runtime_schedule
                         service = ResearchJobService(conn)
                         scheduler_timezone = ZoneInfo(args.timezone or active_schedule["timezone"])
                         daily_hour = (
@@ -159,14 +168,27 @@ def main(argv: list[str] | None = None) -> int:
                                 ),
                             )
                             if daily_run.status in {"queued", "retryable_failed"}:
-                                daily_payload = service.run_discovery_run(daily_run.id)
-                                record_job_result(daily_payload)
+                                # Backoff for a retryable-failed daily run: don't re-run
+                                # it more than once every 10 minutes. Prevents hammering
+                                # upstream discovery APIs when a run keeps failing.
+                                key = daily_run.id
+                                last_at = _discovery_last_attempt.get(key, 0.0)
+                                if daily_run.status == "queued" or (time.monotonic() - last_at >= 600):
+                                    _discovery_last_attempt[key] = time.monotonic()
+                                    daily_payload = service.run_discovery_run(daily_run.id)
+                                    record_job_result(daily_payload)
                         queued = service.run_queued_jobs_once(limit=args.limit)
                         running = service.poll_running_jobs_once(limit=args.limit)
                         for item in [*(queued or []), *(running or [])]:
                             record_job_result(item)
                         conn.commit()
-                        metrics = collect_job_metrics(conn, registry=METRICS)
+                        # Metrics aggregation scans the whole job table; keep it
+                        # cheap by only recomputing every ~5 minutes.
+                        if now_wall - _last_metrics_at >= 300:
+                            metrics = collect_job_metrics(conn, registry=METRICS)
+                            _last_metrics_at = now_wall
+                        else:
+                            metrics = None
                         payload = {
                             "trace": current_trace_context(),
                             "daily": daily_payload,

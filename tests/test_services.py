@@ -714,6 +714,36 @@ def test_translate_job_degraded_adapter_is_explicit_retryable_failure(initialize
         assert translator.requests[0].metadata["task"] == "translate"
 
 
+def test_full_translate_job_does_not_mark_paper_translated_on_empty_output(initialized_db) -> None:
+    """Regression test: when the provider returns OK but no Chinese translation
+    text, the job must NOT be marked succeeded and the paper must NOT be flipped
+    to 'translated' (otherwise the user sees '已翻译' with empty content)."""
+    translator = StubReaderAdapter(AdapterResult.ok("completed", markdown_zh=""))
+
+    with initialized_db.connect() as conn:
+        repo = Repository(conn)
+        paper = _create_versioned_paper(repo)
+        conn.execute("UPDATE paper SET status = 'downloaded' WHERE id = ?", (paper.id,))
+        version_id = paper.current_version_id or ""
+        # Full-translate branch (no "abstract" mode) reads source markdown which
+        # may be absent; the provider returns OK but empty translation text.
+        job = repo.version_action(
+            version_id,
+            "translate",
+            VersionActionRequest(),
+            idempotency_key=None,
+        )
+
+        result = ResearchJobService(conn, translator_adapter=translator).run_translate_job(job.job_id)
+        saved_job = repo.get_job(job.job_id)
+        saved_paper = repo.get_paper(paper.id)
+
+        assert result["status"] == "retryable_failed"
+        assert saved_job.status == "retryable_failed"
+        assert saved_job.error["message"] == "LLM response did not contain a Chinese translation"
+        assert saved_paper.status == "downloaded"  # not flipped to 'translated'
+
+
 def test_abstract_translate_job_persists_chinese_abstract_and_method_summary(initialized_db) -> None:
     translator = StubReaderAdapter(
         AdapterResult.ok(
@@ -1299,3 +1329,65 @@ def _artifact(kind: str, uri: str, metadata: dict[str, object]):
         media_type="text/markdown; charset=utf-8",
         metadata=metadata,
     )
+
+
+def test_get_papers_detail_bulk_enriches_without_n_plus_1(initialized_db) -> None:
+    """The bulk detail loader must produce the same enriched structure as per-row
+    `get_paper` but in constant queries, eliminating the N+1 pattern."""
+    with initialized_db.connect() as conn:
+        repo = Repository(conn)
+        p1 = _create_versioned_paper(repo)
+        p2 = _create_versioned_paper(repo)
+
+        from research_hub.models import PaperIdentifier
+
+        titles = ["Bulk Enrich A", "Bulk Enrich B"]
+        for paper, title in zip([p1, p2], titles):
+            repo.add_topic(paper.id, "aif-04", {"source": "test"})
+            repo.add_identifier(
+                paper.id,
+                PaperIdentifier(
+                    type="arxiv", value=f"https://arxiv.org/abs/2608.{paper.id[-6:]}"
+                ),
+            )
+        papers = repo.list_papers()
+        details = repo.get_papers_detail(papers)
+
+        assert len(details) == 2
+        # topics and identifiers are attached, matching get_paper behaviour
+        for detail in details:
+            assert [t.id for t in detail.topics] == ["aif-04"]
+            assert len(detail.identifiers) == 1
+
+
+def test_run_job_wraps_unexpected_error_as_retryable_failure(initialized_db) -> None:
+    """An unexpected exception during job execution must not leave the job stuck
+    in 'running'; it is rolled back to retryable_failed by the safety net."""
+    import research_hub.services as svc_module
+
+    with initialized_db.connect() as conn:
+        repo = Repository(conn)
+        paper = _create_versioned_paper(repo)
+        version_id = paper.current_version_id or ""
+        repo.create_artifact_for_version(
+            version_id,
+            _artifact("markdown_original", "inline://t", {"content": "# x"}),
+        )
+        job = repo.create_job("translate", "paper_version", version_id, {})
+
+        service = ResearchJobService(conn)
+
+        # Inject a translator that raises an unexpected exception so the safety
+        # net in run_job kicks in.
+        class _ExplodingReader:
+            def run_report(self, request):
+                raise RuntimeError("boom")
+
+        service.translator_adapter = _ExplodingReader()
+        result = service.run_job(job.job_id)
+        saved = repo.get_job(job.job_id)
+
+        assert result["status"] == "retryable_failed"
+        assert saved.status == "retryable_failed"
+        assert "boom" in saved.error["message"]
+        assert service._job_snapshot  # noqa: SLF001 - only asserted existence
