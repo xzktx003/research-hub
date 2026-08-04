@@ -124,6 +124,7 @@ const state = {
   jobsPolling: false,
   loadSeq: 0,
   readerPollToken: 0,
+  pdfDownloading: null,
 };
 
 const endpoints = {
@@ -1501,6 +1502,8 @@ function openPaper(paperId) {
   // previous paper.
   state.readerPollToken++;
   state.selectedPaperId = paperId;
+  // 切换论文时重置 PDF 服务器下载状态，避免残留上一论文的进度/错误提示。
+  state.pdfDownloading = null;
   history.pushState({ view: "reader", paper: paperId }, "", `/papers/${encodeURIComponent(paperId)}/read`);
   switchView("reader", false);
   renderReader();
@@ -1587,14 +1590,25 @@ function renderDocument(paper, workspace) {
     const artifact = findArtifact(artifacts, "pdf");
     const url = safeDocumentUrl(artifactDownloadUrl(artifact));
     if (url) {
-      container.innerHTML = html`<iframe title="论文 PDF" src="${url}"></iframe><p class="meta">PDF 已保存在局域网服务器：${artifact.id}</p>`;
+      container.innerHTML = html`<iframe title="论文 PDF" src="${url}"></iframe><p class="meta">PDF 已保存在服务器，可直接在线阅读。</p>`;
     } else {
       const versionId = getVersionId(effectivePaper) || currentVersion(effectivePaper, workspace)?.id || "";
-      container.innerHTML = versionId
-        ? html`${emptyBlock("PDF 尚未保存在服务器；平台不会回退到外部网站或下载到当前电脑。")}
-          <button class="primary" type="button" data-materialize-pdf="${versionId}">保存 PDF 到服务器</button>`
-        : emptyBlock("论文版本缺少可物化的 PDF 信息。");
-      container.querySelector("[data-materialize-pdf]")?.addEventListener("click", () => materializePdf(versionId));
+      if (!versionId) {
+        container.innerHTML = emptyBlock("论文版本缺少可用于下载的 PDF 信息。");
+      } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.active) {
+        container.innerHTML = html`${loadingBlock("正在服务器下载 PDF，完成后自动在线展示，无需保存到本地。")}
+          <p class="meta">下载在服务器进行，不占用你本地磁盘。</p>`;
+      } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.error) {
+        container.innerHTML = html`${errorBlock(`服务器下载 PDF 失败：${state.pdfDownloading.error}`)}
+          <div class="paper-actions">
+            <button class="primary" type="button" data-materialize-pdf="${versionId}">重新在服务器下载</button>
+          </div>`;
+        container.querySelector("[data-materialize-pdf]")?.addEventListener("click", () => materializePdf(versionId));
+      } else {
+        // PDF 尚未在服务器就绪：自动触发服务器下载，用户无需任何手动「保存到本地」操作。
+        container.innerHTML = html`${loadingBlock("正在服务器下载 PDF，完成后自动在线展示...")}`;
+        ensurePdfOnServer(versionId);
+      }
     }
     return;
   }
@@ -3586,10 +3600,20 @@ function syncDocTabs() {
   });
 }
 
-async function materializePdf(versionId) {
+// 在服务器端下载论文 PDF 并持久化为 artifact，成功后强制刷新 workspace
+// 使阅读台自动切换到 iframe 在线展示。全程只在服务器执行，不涉及浏览器
+// 「下载到本地」。state.pdfDownloading 记录进行中/失败状态，避免重复触发。
+async function ensurePdfOnServer(versionId) {
   if (!versionId) return;
+  const paperId = state.selectedPaperId;
+  // 防重入：同一版本正在自动下载中，直接复用进行中的任务。
+  if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.active) {
+    renderReader();
+    return;
+  }
+  state.pdfDownloading = { versionId, active: true, error: null };
+  renderReader();
   try {
-    showAlert("正在将论文 PDF 保存到局域网服务器...");
     const result = await apiJson(`/paper-versions/${encodeURIComponent(versionId)}/download`, {
       method: "POST",
       headers: { "Idempotency-Key": `web-server-pdf-${versionId}` },
@@ -3597,24 +3621,62 @@ async function materializePdf(versionId) {
     });
     const jobId = result.job_id || result.id;
     if (!jobId) throw new Error("后端未返回下载任务 ID");
-    for (let attempt = 0; attempt < 15; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const job = await apiJson(`/jobs/${encodeURIComponent(jobId)}`);
-      if (["succeeded", "partial_succeeded"].includes(job.status)) {
-        state.workspaces.delete(state.selectedPaperId);
-        showAlert("PDF 已保存到服务器，正在打开同源文档。 ");
-        await loadWorkspace(state.selectedPaperId);
+    // 服务器下载可能需要一段时间（PDF 较大/网络较慢），轮询最多约 3 分钟。
+    const deadline = Date.now() + 3 * 60 * 1000;
+    for (;;) {
+      if (Date.now() > deadline) {
+        state.pdfDownloading = { versionId, active: false, error: null };
+        renderReader();
+        showAlert("服务器仍在后台下载 PDF，稍后重开会话即可在线查看。");
         return;
       }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const job = await apiJson(`/jobs/${encodeURIComponent(jobId)}`);
+      if (["succeeded", "partial_succeeded"].includes(job.status)) break;
       if (["retryable_failed", "terminal_failed", "cancelled"].includes(job.status)) {
-        throw new Error(jsonSummary(job.error) || job.status);
+        // 优先提取后端错误对象里简短可读的 message，避免把完整 JSON 诊断抛给用户。
+        const brief = (() => {
+          const err = job.error;
+          if (!err) return job.status;
+          if (typeof err === "string") return err;
+          const msg = err.message || err.detail || err.reason;
+          return msg ? String(msg) : JSON.stringify(err);
+        })();
+        throw new Error(brief);
       }
     }
-    showAlert("服务器下载仍在进行，可在任务中心查看；完成后重新打开论文。 ");
-    await loadAll();
+    // 下载成功：清空缓存让 workspace 重新拉取（此时应包含 pdf artifact）。
+    state.workspaces.delete(paperId);
+    await loadWorkspace(paperId);
+    if (state.activeView !== "reader") return;
+    const ws = state.workspaces.get(paperId) || {};
+    const hasPdf = ws.artifacts?.some((a) =>
+      ["pdf", "source_pdf"].includes(a.artifact_type) || (a.media_type || "").includes("pdf")
+    );
+    state.pdfDownloading = { versionId, active: false, error: hasPdf ? null : "已下载但未生成可在线展示的 PDF。" };
+    showAlert(hasPdf ? "PDF 已就绪，可直接在线阅读。" : "PDF 下载完成，但暂不可在线展示。");
+    renderReader();
   } catch (error) {
-    showAlert(`服务器保存 PDF 失败：${error.message}`);
+    const friendly = friendlyPdfError(error.message);
+    state.pdfDownloading = { versionId, active: false, error: friendly };
+    renderReader();
+    showAlert(`服务器下载 PDF 失败：${friendly}`);
   }
+}
+
+// 把后端原始错误映射为面向用户的中文友好说明：主要是处理元数据缺 PDF URL
+// 这类「非网络故障」的数据缺失场景，避免用户看到英文报错无从下手。
+function friendlyPdfError(message) {
+  const text = String(message || "");
+  if (/no pdf url|缺少pdf链接|无pdf地址/i.test(text)) {
+    return "该论文服务器的源数据中缺少 PDF 地址，暂时无法自动下载；可稍后再试，或由管理员补充该论文的 PDF 来源后重试。";
+  }
+  return text;
+}
+
+// 手动重试入口：仅在自动下载失败后由「重新在服务器下载」按钮触发。
+async function materializePdf(versionId) {
+  await ensurePdfOnServer(versionId);
 }
 
 async function createCandidate() {
