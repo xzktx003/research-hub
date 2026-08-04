@@ -1186,6 +1186,7 @@ function renderRecommendedReading() {
     .map((paper) => {
       const topics = normalizeTopics(paper);
       const heat = paperHeatScore(paper);
+      const model = paperModelScore(paper);
       const routes = state.digest?.reading_routes || {};
       const inRoute = Object.values(routes).some((ids) => (ids || []).includes(getPaperId(paper)));
       const reasons = [];
@@ -1193,8 +1194,12 @@ function renderRecommendedReading() {
       if (inRoute) reasons.push("在今日阅读路线中");
       if (heat >= 15) reasons.push("热度较高");
       const reportReady = hasReport(paper);
-      if (reportReady) reasons.push("已生成研读报告");
-      return { paper, reasons, weight: heat + (reportReady ? 6 : 0) };
+      if (reportReady) {
+        reasons.push(model != null ? `大模型研读分 ${model}` : "已生成研读报告");
+      }
+      // Smart weight: LLM quality score dominates when present, else heat.
+      const weight = model != null ? model * 10 + heat + 6 : heat;
+      return { paper, reasons, weight };
     })
     .filter((item) => item.reasons.length)
     .sort((a, b) => b.weight - a.weight)
@@ -1303,6 +1308,7 @@ function paperCard(paper) {
           <h3>${raw(highlightQuery(title, currentQuery))}</h3>
           <p class="meta">${authorText(paper) || identifierText(paper) || "作者/来源未提供"}</p>
           <div class="paper-stage-tags">${raw(renderStageTags(paper))}</div>
+          ${raw(paperModelScore(paper) != null ? html`<span class="paper-score-badge" title="大模型研读综合评分（0-10）">研读分 ${paperModelScore(paper)}</span>` : "")}
           ${raw(paperMetaTags(paper).map((tag) => html`<span class="paper-meta-tag ${tag.cls}">${tag.label}</span>`).join(" "))}
         </div>
         <div class="paper-card-meta-actions">${raw(topics.map((topic) => html`<span class="tag">${topic}</span>`).join(" "))} <span class="state ${String(status).toLowerCase()}">${statusLabel}</span><span class="expand-icon" id="expand-${id}">▸</span></div>
@@ -2660,12 +2666,36 @@ function renderDraftPreview() {
         <h3>草稿：${selectedDraft.case_name || selectedDraft.id}</h3>
         <p class="meta">状态 ${selectedDraft.status} · ${selectedDraft.version_label || "v1"}</p>
         <div id="selectedDraftBody" class="markdown-body"></div>
+        <div class="draft-revise">
+          <details class="draft-revise-details">
+            <summary>按章节修订（由大模型改写该章节）</summary>
+            <label>选择要修订的章节
+              <select id="reviseSection">
+                <option value="">（整篇草稿）</option>
+                <option value="技术问题">技术问题</option>
+                <option value="发明内容">发明内容</option>
+                <option value="技术方案">技术方案</option>
+                <option value="有益效果">有益效果</option>
+                <option value="实施例">实施例</option>
+                <option value="权利要求">权利要求</option>
+                <option value="摘要">摘要</option>
+              </select>
+            </label>
+            <label>修订要求
+              <textarea id="reviseInstruction" rows="3" placeholder="例如：把技术问题写得更加聚焦在显存占用上，并补充一行与现有方案的对比。"></textarea>
+            </label>
+            <button class="primary" type="button" id="submitReviseButton">提交修订</button>
+            <p class="meta draft-revise-hint">提交后将生成一个修订版本；生成期间请在「任务中心」查看进度。</p>
+          </details>
+        </div>
       </section>
     `
     : emptyBlock(selectedCandidate ? "该候选尚未生成草稿；需先人工审批，再点击生成草稿。" : "暂无交底书草稿。");
   preview.innerHTML = html`${raw(candidateHtml)}${raw(stageShell)}${raw(draftShell)}`;
   if (selectedDraft) {
     document.getElementById("selectedDraftBody").textContent = selectedDraft.markdown || JSON.stringify(selectedDraft, null, 2);
+    const reviseBtn = document.getElementById("submitReviseButton");
+    if (reviseBtn) reviseBtn.addEventListener("click", () => submitDraftRevise(selectedDraft.id));
   }
   preview.querySelectorAll("[data-candidate-select]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2694,6 +2724,34 @@ function renderDraftPreview() {
       renderPatentWorkspace();
     });
   });
+}
+
+// Submit a section-level LLM revision of the selected patent draft, reusing the
+// existing /patent-drafts/{id}/revise endpoint so "按章节修订" is genuinely usable.
+async function submitDraftRevise(draftId) {
+  if (!draftId) return;
+  const section = document.getElementById("reviseSection")?.value || "";
+  const instruction = document.getElementById("reviseInstruction")?.value?.trim() || "";
+  if (!instruction) {
+    showAlert("请填写修订要求后再提交。");
+    return;
+  }
+  const button = document.getElementById("submitReviseButton");
+  try {
+    await withButtonLoading(button, async () => {
+      await apiJson(`/patent-drafts/${encodeURIComponent(draftId)}/revise`, {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": `web-revise-${draftId}-${section || "full"}-${Date.now()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ section: section || null, instruction, notes: "web 修订" }),
+      });
+      showAlert("修订任务已提交，可在「任务中心」查看进度。");
+    });
+  } catch (error) {
+    showAlert(`修订提交失败：${error.message}`);
+  }
 }
 
 function candidateCard(candidate) {
@@ -2963,6 +3021,14 @@ function filteredPapers() {
       && (!topic || topics.includes(topic))
       && (!status || paperStatus.includes(status));
   });
+  // Default sort is "smart" (LLM quality ⊕ community heat), giving high-value
+  // analyzed papers top billing and keeping hot-but-unanalyzed ones visible.
+  if (sortBy === "" || sortBy === "smart") {
+    return [...filtered].sort((a, b) => paperRankScore(b) - paperRankScore(a));
+  }
+  if (sortBy === "score") {
+    return [...filtered].sort((a, b) => (paperModelScore(b) ?? -1) - (paperModelScore(a) ?? -1));
+  }
   if (sortBy === "hot") {
     return [...filtered].sort((a, b) => paperHeatScore(b) - paperHeatScore(a));
   }
@@ -2987,6 +3053,28 @@ function paperHeatScore(paper) {
   const done = stageTags.filter((tag) => tag.done).length;
   score += done * 5;
   return score;
+}
+
+// The model's overall quality score (0-10) from the reading report, when one
+// exists for the paper. Reads through the loaded workspace so a paper card can
+// show the LLM's judgement of innovation/quality, not just citation heat.
+function paperModelScore(paper) {
+  const id = getPaperId(paper);
+  const ws = state.workspaces?.get(id);
+  const score = ws?.report?.score || paper?.metadata?.report_score;
+  if (score && typeof score.overall === "number") return Math.round(score.overall * 10) / 10;
+  if (typeof score === "number") return Math.round(score * 10) / 10;
+  return null;
+}
+
+// Composite smart score: prefers the LLM's innovation/quality judgement when
+// available, blended with community heat so analyzed papers surface first while
+// hot-but-unanalyzed papers still rank reasonably.
+function paperRankScore(paper) {
+  const model = paperModelScore(paper);
+  const heat = paperHeatScore(paper);
+  if (model == null) return heat; // nothing analyzed yet → fall back to heat
+  return model * 10 + heat; // model score (0-10 → 0-100) dominates
 }
 
 function selectedPaper() {

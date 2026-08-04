@@ -789,6 +789,37 @@ textarea {
   padding-right: 8px;
 }
 
+/* Section-level LLM revision of a patent draft (兑现"按章节修订"). */
+.draft-revise {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.draft-revise-details {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.draft-revise-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--green);
+}
+.draft-revise-details label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+.draft-revise-details select,
+.draft-revise-details textarea {
+  width: 100%;
+  margin-top: 4px;
+}
+.draft-revise-hint {
+  margin-top: 8px;
+}
+
 .evidence-row {
   margin: 0 0 10px;
 }
@@ -2028,6 +2059,17 @@ html.theme-dark .view-toolbar {
 .paper-meta-tag.citation {
   background: rgba(169, 121, 24, 0.14);
   color: var(--patent, #a97918);
+}
+.paper-score-badge {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  background: rgba(15, 118, 110, 0.14);
+  color: var(--teal, #0f766e);
+  font-weight: 600;
 }
 .paper-ext-links {
   margin: 4px 0;
