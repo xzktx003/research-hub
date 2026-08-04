@@ -6,7 +6,8 @@
     <meta name="color-scheme" content="light dark">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'none'">
     <title>AI Infra Research Hub</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f7cff'/%3E%3Cstop offset='1' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 46V30l8-8 8 8v16M50 22v18M44 26l6-4 6 4v16' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/styles.css?v=20260805ui">
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主内容</a>
@@ -20,16 +21,46 @@
           </div>
         </div>
         <nav class="nav-list" id="navList">
-          <button class="nav-item active" data-view="dashboard" type="button">仪表盘</button>
-          <button class="nav-item" data-view="papers" type="button">论文库</button>
-          <button class="nav-item" data-view="reader" type="button">阅读台</button>
-          <button class="nav-item" data-view="topics" type="button">主题中心</button>
-          <button class="nav-item" data-view="workflows" type="button">工作流</button>
-          <button class="nav-item" data-view="jobs" type="button">任务中心</button>
-          <button class="nav-item" data-view="relations" type="button">关系视图</button>
-          <button class="nav-item" data-view="patents" type="button">专利候选</button>
-          <button class="nav-item" data-view="notebook" type="button">笔记本</button>
-          <button class="nav-item" data-view="settings" type="button">设置</button>
+          <button class="nav-item active" data-view="dashboard" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>仪表盘</span>
+          </button>
+          <button class="nav-item" data-view="papers" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+            <span>论文库</span>
+          </button>
+          <button class="nav-item" data-view="reader" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20a8 8 0 0 1 8-8 2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H6a6 6 0 0 0-6 6v1a2 2 0 0 0 2 2l2 0a8 8 0 0 1 8 8Z"/><circle cx="12" cy="9" r="6"/><path d="M12 9v.01"/></svg>
+            <span>阅读台</span>
+          </button>
+          <button class="nav-item" data-view="topics" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z"/><path d="M6 6h.008v.008H6V6Z"/></svg>
+            <span>主题中心</span>
+          </button>
+          <button class="nav-item" data-view="workflows" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7-3 3.5-2.5M19 6l-3.5 2.5M8 12l3-3 2 1.5 3-1.5"/></svg>
+            <span>工作流</span>
+          </button>
+          <button class="nav-item" data-view="jobs" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h4"/></svg>
+            <span>任务中心</span>
+          </button>
+          <button class="nav-item" data-view="relations" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5l2 7.5M16 7.5l-2 7.5M8.5 6h7"/></svg>
+            <span>关系视图</span>
+          </button>
+          <button class="nav-item" data-view="patents" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+            <span>专利候选</span>
+          </button>
+          <button class="nav-item" data-view="notebook" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg>
+            <span>笔记本</span>
+          </button>
+          <button class="nav-item" data-view="settings" type="button">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>设置</span>
+          </button>
         </nav>
         <section class="api-panel" aria-labelledby="apiPanelTitle">
           <h2 id="apiPanelTitle">API 状态</h2>
