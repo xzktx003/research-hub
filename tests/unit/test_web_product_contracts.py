@@ -769,3 +769,30 @@ def test_dashboard_has_recommended_reading_panel() -> None:
     assert "命中主题" in app
     assert ".recommended-item" in styles
 
+
+
+def test_pdf_tab_reads_inline_and_downloads_only_on_explicit_button() -> None:
+    """阅读台 PDF tab 必须默认内联浏览而不是自动下载；「下载 PDF 到本地」
+    是唯一的本地下载入口；无 PDF 时不得自动触发服务器拉取，需用户点
+    「获取 PDF 以便在线阅读」。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    # 有 PDF artifact 时：iframe 内联浏览 + 明确的下载按钮，而不是自动下载。
+    assert 'selectedTab === "pdf"' in app
+    assert "iframe title=\"论文 PDF\"" in app
+    assert "data-download-local-pdf" in app
+    assert "下载 PDF 到本地" in app
+    assert "function downloadPdfToLocal" in app
+    # 下载通过 fetch blob + a[download]，文件名用论文标题。
+    assert 'link.download = `${slug || "paper"}.pdf`' in app
+    assert "URL.createObjectURL(blob)" in app
+    # PDF 浏览区操作条样式。
+    assert ".pdf-viewer-bar" in styles
+
+    # 无 PDF artifact 时：不再自动触发服务器下载，而是显示主动获取按钮。
+    assert "正在服务器下载 PDF" not in app
+    assert "data-fetch-pdf-on-server" in app
+    assert "获取 PDF 以便在线阅读" in app
+    assert "不会下载到你本地" in app

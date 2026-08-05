@@ -2376,6 +2376,29 @@ html.font-xlarge  { zoom: 1.25; }
   font-weight: 500;
 }
 
+/* PDF 在线阅读区下方的操作条：提示文字 + 「下载 PDF 到本地」按钮 */
+.pdf-viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.pdf-viewer-bar .meta {
+  margin-bottom: 0;
+}
+
+.pdf-viewer-bar .primary {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
 /* ---- 流水线卡片整体可点击展开 ---- */
 .pipeline-run-card {
   cursor: pointer;

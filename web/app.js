@@ -2004,26 +2004,45 @@ function renderDocument(paper, workspace) {
   if (state.selectedTab === "pdf") {
     const artifact = findArtifact(artifacts, "pdf");
     const url = safeDocumentUrl(artifactDownloadUrl(artifact));
+    const versionId = getVersionId(effectivePaper) || currentVersion(effectivePaper, workspace)?.id || "";
     if (url) {
-      container.innerHTML = html`<iframe title="论文 PDF" src="${url}"></iframe><p class="meta">PDF 已保存在服务器，可直接在线阅读。</p>`;
+      // 有 PDF artifact：直接在文档区 iframe 浏览，并提供明确的「下载到本地」按钮。
+      // 下载是用户显式操作（点「下载 PDF」才触发浏览器保存），默认只做在线阅读。
+      container.innerHTML = html`
+        <iframe title="论文 PDF" src="${url}"></iframe>
+        <div class="pdf-viewer-bar">
+          <span class="meta">PDF 已保存在服务器，可直接在线阅读。</span>
+          <button class="primary" type="button" data-download-local-pdf="${artifact.id}" title="把这份 PDF 保存到你的本地设备">
+            下载 PDF 到本地
+          </button>
+        </div>
+      `;
+      container.querySelector("[data-download-local-pdf]")?.addEventListener("click", () => downloadPdfToLocal(artifact, effectivePaper));
+    } else if (!versionId) {
+      container.innerHTML = emptyBlock("论文版本缺少可用于下载的 PDF 信息。");
+    } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.active) {
+      // 服务器后台获取中：允许用户继续等待，也允许中断后「下载到本地」。
+      // 注意：loadingBlock/errorBlock 返回的是 HTML 字符串，必须直接字符串拼接，
+      // 不能用外层 html`` 再包一次（会被 escapeHtml 转义成 &lt;div&gt; 文本）。
+      container.innerHTML = `${loadingBlock("正在服务器获取 PDF，完成后自动在线展示。")}
+        <p class="meta">获取在服务器进行，不占用你本地磁盘；「下载到本地」需待 PDF 就绪。</p>`;
+    } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.error) {
+      container.innerHTML = `${errorBlock(`服务器获取 PDF 失败：${state.pdfDownloading.error}`)}
+        <div class="paper-actions">
+          <button class="primary" type="button" data-materialize-pdf="${versionId}">重新在服务器获取</button>
+        </div>`;
+      container.querySelector("[data-materialize-pdf]")?.addEventListener("click", () => materializePdf(versionId));
     } else {
-      const versionId = getVersionId(effectivePaper) || currentVersion(effectivePaper, workspace)?.id || "";
-      if (!versionId) {
-        container.innerHTML = emptyBlock("论文版本缺少可用于下载的 PDF 信息。");
-      } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.active) {
-        container.innerHTML = html`${loadingBlock("正在服务器下载 PDF，完成后自动在线展示，无需保存到本地。")}
-          <p class="meta">下载在服务器进行，不占用你本地磁盘。</p>`;
-      } else if (state.pdfDownloading?.versionId === versionId && state.pdfDownloading?.error) {
-        container.innerHTML = html`${errorBlock(`服务器下载 PDF 失败：${state.pdfDownloading.error}`)}
-          <div class="paper-actions">
-            <button class="primary" type="button" data-materialize-pdf="${versionId}">重新在服务器下载</button>
-          </div>`;
-        container.querySelector("[data-materialize-pdf]")?.addEventListener("click", () => materializePdf(versionId));
-      } else {
-        // PDF 尚未在服务器就绪：自动触发服务器下载，用户无需任何手动「保存到本地」操作。
-        container.innerHTML = html`${loadingBlock("正在服务器下载 PDF，完成后自动在线展示...")}`;
-        ensurePdfOnServer(versionId);
-      }
+      // PDF 尚未在服务器就绪：不再自动触发，改为用户主动点击「获取 PDF 以便在线阅读」。
+      // emptyBlock 返回 HTML 字符串，直接拼接（外层 html`` 会把它转义成文本）。
+      container.innerHTML = `${emptyBlock("这篇论文的 PDF 还没有在服务器准备好，暂时无法在线阅读。")}
+        <div class="paper-actions">
+          <button class="primary" type="button" data-fetch-pdf-on-server="${versionId}" title="在服务器下载并保存该 PDF，然后把浏览器切换到在线阅读">
+            获取 PDF 以便在线阅读
+          </button>
+        </div>
+        <p class="meta">「获取 PDF」只会把 PDF 保存到服务器供在线阅读，不会下载到你本地；需要保存到本地时，请在在线阅读界面点「下载 PDF 到本地」。</p>`;
+      container.querySelector("[data-fetch-pdf-on-server]")?.addEventListener("click", () => ensurePdfOnServer(versionId));
     }
     return;
   }
@@ -2071,7 +2090,8 @@ function renderArtifactText(container, artifact, label) {
     return;
   }
   if (cached?.error) {
-    container.innerHTML = html`<p><a href="${url}" target="_blank" rel="noreferrer">打开 ${label} artifact</a></p>${errorBlock(`无法内联预览：${cached.error}`)}`;
+    // errorBlock 返回 HTML 字符串，直接拼接避免被外层 html`` 转义成文本。
+    container.innerHTML = `<p><a href="${url}" target="_blank" rel="noreferrer">打开 ${label} artifact</a></p>${errorBlock(`无法内联预览：${cached.error}`)}`;
     return;
   }
   container.innerHTML = loadingBlock(`正在读取 ${label} artifact...`);
@@ -4260,6 +4280,53 @@ function friendlyPdfError(message) {
 // 手动重试入口：仅在自动下载失败后由「重新在服务器下载」按钮触发。
 async function materializePdf(versionId) {
   await ensurePdfOnServer(versionId);
+}
+
+// 把已在服务器就绪的 PDF artifact「下载到本地」。只有用户点击「下载 PDF 到
+// 本地」按钮才触发；fetch PDF 字节 → 生成 blob → 用 a[download] 触发浏览器
+// 保存，等价于普通文件下载（浏览器下载栏会出现）。
+async function downloadPdfToLocal(artifact, paper) {
+  if (!artifact?.id) {
+    showAlert("暂无可下载的 PDF 文件。");
+    return;
+  }
+  const button = document.querySelector("[data-download-local-pdf]");
+  try {
+    if (button) {
+      button.disabled = true;
+      button.textContent = "正在准备下载…";
+    }
+    const url = `${API_BASE}/artifacts/${encodeURIComponent(artifact.id)}/download`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        message = payload?.error?.message || payload?.detail || message;
+      } catch (_) { /* keep HTTP status */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    // 用论文标题构造文件名（保留 .pdf 后缀）。
+    const title = paperTitle(paper) || artifact.id;
+    const slug = String(title).slice(0, 80).replace(/[\\/:*?"<>|\s]+/g, "_");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${slug || "paper"}.pdf`;
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    showAlert("PDF 已开始下载到本地。");
+  } catch (error) {
+    showAlert(`下载 PDF 失败：${friendlyPdfError(error.message)}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "下载 PDF 到本地";
+    }
+  }
 }
 
 async function createCandidate() {
