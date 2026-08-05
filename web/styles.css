@@ -849,6 +849,14 @@ html.theme-dark .metric strong {
   gap: 8px;
 }
 
+/* 研读报告复制/导出按钮条。 */
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* 一键触发解析：主色强调，引导「未解析 → 解析」这一核心动作。 */
 .paper-actions .parse-trigger {
   color: #fff;

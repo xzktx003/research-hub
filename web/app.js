@@ -2059,7 +2059,7 @@ function renderDocument(paper, workspace) {
             <span class="pdf-page-indicator" data-pdf-page>第 1 / 1 页</span>
             <button class="secondary compact-action" type="button" data-pdf-next title="下一页">下一页 ›</button>
             <select class="pdf-zoom" data-pdf-zoom aria-label="缩放">
-              <option value="1" selected>100%</option>
+              <option value="1" selected>适应宽度</option>
               <option value="1.5">150%</option>
               <option value="2">200%</option>
               <option value="3">300%</option>
@@ -2122,6 +2122,33 @@ function renderDocument(paper, workspace) {
     const versionId = getVersionId(effectivePaper) || currentVersion(effectivePaper, workspace)?.id || "";
     if (report) {
       renderTextDocument(container, reportText(report));
+      // 研读报告 tab 添加复制/导出按钮
+      const actions = document.createElement("div");
+      actions.className = "report-actions";
+      actions.innerHTML = html`
+        <button class="secondary compact-action" type="button" data-copy-report title="复制研读报告全文到剪贴板">📋 复制报告</button>
+        <button class="secondary compact-action" type="button" data-export-report-md title="导出研读报告为 Markdown 文件">📥 导出 Markdown</button>
+      `;
+      container.appendChild(actions);
+      actions.querySelector("[data-copy-report]")?.addEventListener("click", () => {
+        const text = reportText(report);
+        navigator.clipboard.writeText(text).then(() => {
+          showAlert("研读报告已复制到剪贴板。");
+        }).catch(() => {
+          showAlert("复制失败，请手动选择文本复制。");
+        });
+      });
+      actions.querySelector("[data-export-report-md]")?.addEventListener("click", () => {
+        const text = reportText(report);
+        const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${slugify(paperTitle(effectivePaper)) || "reading-report"}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showAlert("研读报告已导出为 Markdown 文件。");
+      });
     } else if (workspace?.reportError) {
       container.innerHTML = `${errorBlock(workspace.reportError)}`;
     } else if (workspace?.reportGenerating) {
@@ -2996,11 +3023,13 @@ function renderJobs() {
     `;
   }).join("");
   const jobFoldedCount = visibleJobs.filter((job, index) => state.foldedCards.has(`job:${job.id || job.job_id || index}`)).length;
+  const failedJobs = visibleJobs.filter((job) => canRetryJob(job));
   container.innerHTML = pipelineHtml
     + html`<h3 class="daily-history-title">全部异步任务（按最近更新倒序）</h3>`
     + html`
       <div class="fold-batch-bar">
         <span class="batch-label">卡片折叠：${jobFoldedCount ? `已折叠 ${jobFoldedCount}/${visibleJobs.length}` : `共 ${visibleJobs.length} 张`}</span>
+        ${raw(failedJobs.length > 1 ? html`<button class="danger-secondary compact-action" type="button" data-batch-retry title="重试全部 ${failedJobs.length} 个失败/可重试任务">全部重试失败任务 (${failedJobs.length})</button>` : "")}
         <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="jobList" title="把当前任务列表全部折叠成标题条">全部折叠</button>
         <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="jobList" title="展开当前任务列表">全部展开</button>
       </div>
@@ -3011,6 +3040,10 @@ function renderJobs() {
   container.querySelectorAll("[data-job-action]").forEach((button) => {
     button.addEventListener("click", () => runJobAction(button.dataset.jobId, button.dataset.jobAction));
   });
+  const batchRetryBtn = container.querySelector("[data-batch-retry]");
+  if (batchRetryBtn) {
+    batchRetryBtn.addEventListener("click", () => retryAllFailedJobs(failedJobs));
+  }
   container.querySelectorAll("[data-run-toggle]").forEach((button) => {
     button.addEventListener("click", (event) => {
       const guard = state.activeView === "jobs";
@@ -4614,6 +4647,11 @@ function friendlyPdfError(message) {
   return text;
 }
 
+// 生成适合做文件名的 ASCII slug：截断 + 非法字符替换为下划线。
+function slugify(title) {
+  return String(title || "").slice(0, 80).replace(/[\\/:*?"<>|\s]+/g, "_");
+}
+
 // 手动重试入口：仅在自动下载失败后由「重新在服务器下载」按钮触发。
 async function materializePdf(versionId) {
   await ensurePdfOnServer(versionId);
@@ -4646,7 +4684,7 @@ async function downloadPdfToLocal(artifact, paper) {
     const blob = await response.blob();
     // 用论文标题构造文件名（保留 .pdf 后缀）。
     const title = paperTitle(paper) || artifact.id;
-    const slug = String(title).slice(0, 80).replace(/[\\/:*?"<>|\s]+/g, "_");
+    const slug = slugify(title);
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `${slug || "paper"}.pdf`;
@@ -4743,6 +4781,31 @@ async function runJobAction(jobId, action) {
     showAlert(`${action === "retry" ? "重试" : "取消"}任务失败：${error.message}`);
     renderJobs();
   }
+}
+
+async function retryAllFailedJobs(failedJobs) {
+  if (!failedJobs || !failedJobs.length) return;
+  const count = failedJobs.length;
+  showAlert(`正在批量重试 ${count} 个失败任务...`);
+  let success = 0;
+  let fail = 0;
+  for (const job of failedJobs) {
+    const jobId = job.id || job.job_id;
+    if (!jobId) continue;
+    try {
+      await apiJson(`/jobs/${encodeURIComponent(jobId)}`, {
+        method: "POST",
+        headers: { "Idempotency-Key": `web-batch-retry-${jobId}` },
+        body: JSON.stringify({ action: "retry", reason: "Web UI batch retry all failed." }),
+      });
+      success++;
+    } catch (_) {
+      fail++;
+    }
+  }
+  showAlert(`批量重试完成：${success} 个成功${fail ? `，${fail} 个失败` : ""}。`);
+  await loadAll();
+  renderJobs();
 }
 
 async function runPriorArtCheck(candidateId) {

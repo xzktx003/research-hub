@@ -957,3 +957,49 @@ def test_backend_serves_pdf_preview_render_endpoints() -> None:
     # 依赖清单声明 PyMuPDF。
     req = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
     assert "pymupdf" in req
+
+
+def test_jobs_offer_batch_retry_for_failed() -> None:
+    """任务中心必须提供「全部重试失败任务」批量操作：当存在 >1 个可重试任务
+    时，批量条显示一键重试按钮，点击后逐个重排队失败任务，避免用户 127 个
+    失败任务只能逐个点击重试。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "data-batch-retry" in app
+    assert "retryAllFailedJobs(" in app
+    assert "failedJobs.length > 1" in app
+    assert "全部重试失败任务" in app
+    assert "Web UI batch retry all failed." in app
+    assert "批量重试完成" in app
+
+
+def test_report_tab_offers_copy_and_export() -> None:
+    """阅读台「研读报告」tab 生成后必须提供「复制报告」与「导出 Markdown」，
+    让用户能带走完整研读内容，而只能在界面上读。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "data-copy-report" in app
+    assert "data-export-report-md" in app
+    assert "复制报告" in app
+    assert "导出 Markdown" in app
+    assert "navigator.clipboard.writeText" in app
+    assert "text/markdown;charset=utf-8" in app
+    # 文件名复用公共 slugify（与 PDF 下载一致）。
+    assert "function slugify(title)" in app
+    assert ".md`" in app
+
+
+def test_pdf_zoom_offers_fit_width_option() -> None:
+    """PDF 在线阅读的缩放下拉必须默认「适应宽度」（100%=一页满容器宽），
+    并保留 150/200/300% 放大档位。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert 'value="1" selected>适应宽度' in app
+    assert 'value="1.5">150%' in app
+    assert 'value="2">200%' in app
+    assert 'value="3">300%' in app
+    # CSS data-zoom 选择器支撑缩放。
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+    assert '.pdf-page-img[data-zoom="1"]' in styles
+    assert '.pdf-page-img[data-zoom="1.5"]' in styles
+    assert '.pdf-page-img[data-zoom="3"]' in styles
