@@ -774,22 +774,35 @@ def test_dashboard_has_recommended_reading_panel() -> None:
 def test_pdf_tab_reads_inline_and_downloads_only_on_explicit_button() -> None:
     """阅读台 PDF tab 必须默认内联浏览而不是自动下载；「下载 PDF 到本地」
     是唯一的本地下载入口；无 PDF 时不得自动触发服务器拉取，需用户点
-    「获取 PDF 以便在线阅读」。"""
+    「获取 PDF 以便在线阅读」。
+    PDF 在线阅读采用服务端渲染逐页 PNG 图片（<img> 轮播）——不依赖浏览器
+    内置 PDF 查看器或 PDF.js canvas 渲染（VS Code 内置 Electron 等环境会白板），
+    任何浏览器都能稳定显示。"""
     app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
     index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
     styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
 
-    # 有 PDF artifact 时：iframe 内联浏览 + 明确的下载按钮，而不是自动下载。
+    # 有 PDF artifact 时：图片轮播在线阅读 + 明确的下载按钮，而不是自动下载。
     assert 'selectedTab === "pdf"' in app
-    assert "iframe title=\"论文 PDF\"" in app
+    assert "data-pdf-page-img" in app
+    assert "initPdfViewer(container, {" in app
+    # 前端只从服务端渲染端点取图：/pdf/pages 拿页数，/pdf/page/N 拿第 N 页 PNG。
+    assert "`${baseUrl}/page/${n}`" in app
+    assert "`${baseUrl}/pages`" in app
+    # 缩放走 data-zoom 属性 + CSS 选择器（strict CSP 下不用 inline style）。
+    assert "img.dataset.zoom" in app
     assert "data-download-local-pdf" in app
     assert "下载 PDF 到本地" in app
     assert "function downloadPdfToLocal" in app
     # 下载通过 fetch blob + a[download]，文件名用论文标题。
     assert 'link.download = `${slug || "paper"}.pdf`' in app
     assert "URL.createObjectURL(blob)" in app
-    # PDF 浏览区操作条样式。
+    # PDF 浏览区操作条与图片轮播样式。
     assert ".pdf-viewer-bar" in styles
+    assert ".pdf-page-img" in styles
+    assert 'data-zoom="2"' in styles
+    # 图片必须从服务端渲染端点加载，不能回落到 iframe。
+    assert 'iframe title="论文 PDF"' not in app
 
     # 无 PDF artifact 时：不再自动触发服务器下载，而是显示主动获取按钮。
     assert "正在服务器下载 PDF" not in app
@@ -921,3 +934,26 @@ def test_workflow_daily_pipeline_edges_connect_translate_to_relate() -> None:
     assert '["parse", "analyze"]' in workflows
     assert '["parse", "translate"]' in workflows
     assert '["analyze", "relate"]' in workflows
+
+
+def test_backend_serves_pdf_preview_render_endpoints() -> None:
+    """后端必须为 PDF 在线阅读提供服务端渲染端点：/pdf/pages 返回页数，
+    /pdf/page/{n} 返回第 n 页 PNG。这样前端 <img> 轮播在任何浏览器（含
+    VS Code 内置 Electron）都能显示，不依赖浏览器内置 PDF 查看器。"""
+    api = (PROJECT_ROOT / "research_hub" / "app.py").read_text(encoding="utf-8")
+
+    # 端点路由与函数。
+    assert '"/api/v1/artifacts/{artifact_id}/pdf/pages"' in api
+    assert "def pdf_pages_meta(" in api
+    assert '"/api/v1/artifacts/{artifact_id}/pdf/page/{page_number}"' in api
+    assert "def pdf_page_image(" in api
+    # 用 PyMuPDF（fitz）渲染 PNG，返回 image/png 并带缓存。
+    assert "import fitz" in api
+    assert "total_pages" in api
+    assert "media_type=\"image/png\"" in api
+    assert "Cache-Control" in api
+    # 本地文件型 PDF 才可渲染；不落地服务端依赖时给出明确 501 提示。
+    assert "未安装 PDF 渲染依赖" in api
+    # 依赖清单声明 PyMuPDF。
+    req = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "pymupdf" in req

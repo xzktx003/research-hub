@@ -2049,10 +2049,28 @@ function renderDocument(paper, workspace) {
     const url = safeDocumentUrl(artifactDownloadUrl(artifact));
     const versionId = getVersionId(effectivePaper) || currentVersion(effectivePaper, workspace)?.id || "";
     if (url) {
-      // 有 PDF artifact：直接在文档区 iframe 浏览，并提供明确的「下载到本地」按钮。
+      // 有 PDF artifact：用 PDF.js 渲染到 canvas 容器（不依赖浏览器内置 PDF 查看器，
+      // 无论 Chrome/Electron/Firefox 都能稳定内嵌显示），并提供明确「下载到本地」按钮。
       // 下载是用户显式操作（点「下载 PDF」才触发浏览器保存），默认只做在线阅读。
       container.innerHTML = html`
-        <iframe title="论文 PDF" src="${url}"></iframe>
+        <div class="pdf-viewer" data-pdf-viewer data-pdf-src="${url}">
+          <div class="pdf-viewer-toolbar">
+            <button class="secondary compact-action" type="button" data-pdf-prev title="上一页">‹ 上一页</button>
+            <span class="pdf-page-indicator" data-pdf-page>第 1 / 1 页</span>
+            <button class="secondary compact-action" type="button" data-pdf-next title="下一页">下一页 ›</button>
+            <select class="pdf-zoom" data-pdf-zoom aria-label="缩放">
+              <option value="1" selected>100%</option>
+              <option value="1.5">150%</option>
+              <option value="2">200%</option>
+              <option value="3">300%</option>
+            </select>
+          </div>
+          <div class="pdf-viewer-canvas-wrap" data-pdf-wrap>
+            <img class="pdf-page-img" data-pdf-page-img alt="PDF 页面">
+            <p class="pdf-loading" data-pdf-loading>正在加载 PDF…</p>
+            <p class="pdf-error" data-pdf-error hidden></p>
+          </div>
+        </div>
         <div class="pdf-viewer-bar">
           <span class="meta">PDF 已保存在服务器，可直接在线阅读。</span>
           <button class="primary" type="button" data-download-local-pdf="${artifact.id}" title="把这份 PDF 保存到你的本地设备">
@@ -2060,6 +2078,10 @@ function renderDocument(paper, workspace) {
           </button>
         </div>
       `;
+      initPdfViewer(container, {
+        artifactId: artifact.id,
+        baseUrl: `${API_BASE}/artifacts/${encodeURIComponent(artifact.id)}/pdf`,
+      });
       container.querySelector("[data-download-local-pdf]")?.addEventListener("click", () => downloadPdfToLocal(artifact, effectivePaper));
     } else if (!versionId) {
       container.innerHTML = emptyBlock("论文版本缺少可用于下载的 PDF 信息。");
@@ -2119,6 +2141,101 @@ function renderDocument(paper, workspace) {
   } else {
     container.innerHTML = emptyBlock("后端未提供证据锚点。");
   }
+}
+
+// ---- PDF 在线阅读（服务端渲染图片模式） -------------------------------
+// 服务端用 PyMuPDF 把 PDF 每页渲染成 PNG，前端用 <img> 轮播显示，翻页/缩放
+// 即切换图片或调整宽度。不依赖浏览器内置 PDF 查看器，也不依赖 PDF.js 的
+// canvas 渲染（VS Code 内置 Electron 等环境 canvas 渲染不会真正完成），
+// <img> 在任何浏览器都能稳定显示。
+
+// 在线阅读：服务端把 PDF 每页渲染成 PNG，前端用 <img> 轮播显示。
+// 不依赖浏览器内置 PDF 查看器，也不依赖 PDF.js 的 canvas 渲染（部分环境
+// 如 VS Code 内置 Electron 下 canvas 渲染不会真正完成），<img> 任何环境都可显示。
+function initPdfViewer(container, cfg) {
+  const baseUrl = cfg?.baseUrl || "";
+  const wrap = container.querySelector("[data-pdf-wrap]");
+  const img = container.querySelector("[data-pdf-page-img]");
+  const loadingEl = container.querySelector("[data-pdf-loading]");
+  const errorEl = container.querySelector("[data-pdf-error]");
+  const pageEl = container.querySelector("[data-pdf-page]");
+  const prevBtn = container.querySelector("[data-pdf-prev]");
+  const nextBtn = container.querySelector("[data-pdf-next]");
+  const zoomSel = container.querySelector("[data-pdf-zoom]");
+  const state = { pageNum: 1, totalPages: 0, zoom: 1, loading: false };
+  if (!img || !baseUrl) {
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = "PDF 预览初始化失败：缺少渲染入口。";
+    }
+    return;
+  }
+
+  function showError(message) {
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+    errorEl.textContent = message || "PDF 加载失败，请尝试重新进入或下载到本地查看。";
+  }
+
+  function applyZoom() {
+    // 严格 CSP 下不允许 inline style，用 data-zoom 属性 + CSS 宽度百分比实现
+    // 缩放（见 styles.css 的 [data-zoom] 选择器）。缩放即改变 img 宽度相对
+    // 于容器宽度的百分比，wrap 提供滚动；任何浏览器都能稳定呈现实物图。
+    img.dataset.zoom = String(state.zoom || 1);
+    if (wrap) { wrap.scrollLeft = 0; wrap.scrollTop = 0; }
+  }
+
+  function renderPage(n) {
+    if (n < 1 || (state.totalPages && n > state.totalPages)) return;
+    state.pageNum = n;
+    state.loading = true;
+    loadingEl.hidden = false;
+    errorEl.hidden = true;
+    pageEl.textContent = `第 ${n} / ${state.totalPages || "…"} 页`;
+    prevBtn.disabled = n <= 1;
+    nextBtn.disabled = state.totalPages ? n >= state.totalPages : true;
+    img.onload = () => {
+      loadingEl.hidden = true;
+      state.loading = false;
+    };
+    img.onerror = () => {
+      loadingEl.hidden = true;
+      state.loading = false;
+      showError(`第 ${n} 页图片加载失败，请在在线阅读界面点击「下载 PDF 到本地」查看。`);
+    };
+    // 切换 src 时会清空当前图避免上一页闪现。
+    img.src = `${baseUrl}/page/${n}`;
+    applyZoom();
+  }
+
+  prevBtn?.addEventListener("click", () => {
+    if (state.pageNum <= 1) return;
+    renderPage(state.pageNum - 1);
+  });
+  nextBtn?.addEventListener("click", () => {
+    if (!state.totalPages || state.pageNum >= state.totalPages) return;
+    renderPage(state.pageNum + 1);
+  });
+  zoomSel?.addEventListener("change", () => {
+    state.zoom = Number(zoomSel.value) || 1;
+    applyZoom();
+  });
+
+  loadingEl.hidden = false;
+  errorEl.hidden = true;
+  fetch(`${baseUrl}/pages`)
+    .then((r) => {
+      if (!r.ok) throw new Error(r.status === 501 ? "服务端缺少 PDF 预览依赖" : `服务端返回 ${r.status}`);
+      return r.json();
+    })
+    .then((meta) => {
+      state.totalPages = meta.total_pages || 0;
+      if (!state.totalPages) throw new Error("PDF 页数为空。");
+      renderPage(1);
+    })
+    .catch((error) => {
+      showError(`PDF 加载失败：${friendlyPdfError(error?.message || error)}`);
+    });
 }
 
 function renderArtifactText(container, artifact, label) {

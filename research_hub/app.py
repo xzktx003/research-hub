@@ -1091,6 +1091,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content_disposition_type="inline" if inline else "attachment",
         )
 
+    def artifact_local_path(artifact: Any) -> Path:
+        """解析 artifact 为服务器本地文件路径；非本地型 artifact 报错。"""
+        uri = artifact.uri
+        if uri.startswith("inline://"):
+            raise HTTPException(status_code=422, detail="该 PDF 是内联内容，无法生成预览图。")
+        if uri.startswith("http://") or uri.startswith("https://"):
+            raise HTTPException(status_code=422, detail="该 PDF 是远程引用，无法生成预览图。")
+        path = Path(uri.removeprefix("file://")).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        path = path.resolve()
+        if not any(path == root or root in path.parents for root in downloadable_roots):
+            raise HTTPException(status_code=403, detail="Artifact path is outside approved storage roots")
+        if not path.exists() or not path.is_file():
+            raise HTTPException(status_code=404, detail="Artifact file is not available on this host")
+        return path
+
     @app.get("/api/v1/artifacts/{artifact_id}/download")
     def download_artifact(
         artifact_id: str,
@@ -1103,6 +1120,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             or artifact.media_type.startswith(("text/", "image/"))
         )
         return artifact_file_response(artifact, inline=inline)
+
+    @app.get("/api/v1/artifacts/{artifact_id}/pdf/pages")
+    def pdf_pages_meta(
+        artifact_id: str,
+        repository: Repository = Depends(repo),
+    ) -> dict[str, Any]:
+        """返回 PDF 的页数信息，用于前端的 PDF 在线阅读（图片渲染模式）。"""
+        artifact = repository.get_artifact(artifact_id)
+        if artifact.media_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Artifact is not a PDF")
+        path = artifact_local_path(artifact)
+        try:
+            import fitz  # PyMuPDF，可选依赖
+        except Exception as exc:  # pragma: no cover - 取决于部署环境
+            raise HTTPException(
+                status_code=501,
+                detail="服务端未安装 PDF 渲染依赖（PyMuPDF），无法生成 PDF 预览图。",
+            ) from exc
+        try:
+            with fitz.open(path) as doc:
+                first = doc[0]
+                return {
+                    "total_pages": doc.page_count,
+                    "width": int(first.rect.width),
+                    "height": int(first.rect.height),
+                }
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"无法解析 PDF：{exc}") from exc
+
+    @app.get("/api/v1/artifacts/{artifact_id}/pdf/page/{page_number}")
+    def pdf_page_image(
+        artifact_id: str,
+        page_number: int,
+        repository: Repository = Depends(repo),
+    ) -> Response:
+        """把 PDF 的某一页渲染成 PNG 图片返回（用于在线阅读，兼容无内置 PDF 查看器的环境）。"""
+        artifact = repository.get_artifact(artifact_id)
+        if artifact.media_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Artifact is not a PDF")
+        if page_number < 1:
+            raise HTTPException(status_code=422, detail="page_number 必须从 1 开始")
+        path = artifact_local_path(artifact)
+        try:
+            import fitz  # PyMuPDF，可选依赖
+        except Exception as exc:  # pragma: no cover - 取决于部署环境
+            raise HTTPException(
+                status_code=501,
+                detail="服务端未安装 PDF 渲染依赖（PyMuPDF），无法生成 PDF 预览图。",
+            ) from exc
+        try:
+            with fitz.open(path) as doc:
+                if page_number > doc.page_count:
+                    raise HTTPException(status_code=404, detail="页码超出范围")
+                page = doc[page_number - 1]
+                # 2x 缩放保证清晰度；限制最大边长避免超大图。
+                zoom = 2.0
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+                png_bytes = pix.tobytes("png")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"无法渲染 PDF 页：{exc}") from exc
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.post("/api/v1/invention-candidates", status_code=201)
     def create_invention_candidate(
