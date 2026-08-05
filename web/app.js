@@ -120,6 +120,7 @@ const state = {
   expandedRuns: new Set(),
   activeView: "dashboard",
   batchSelected: new Set(),
+  foldedCards: new Set(),
   jobsPollTimer: null,
   jobsPolling: false,
   loadSeq: 0,
@@ -1086,7 +1087,23 @@ function renderDailyByTopic(containerId, papers, source) {
   if (byTopic.get("__untagged__")?.length) {
     sections.push(untaggedSection(byTopic.get("__untagged__"), containerId));
   }
+  // 批量折叠/展开工具条插在第一个 topic group 前：先渲染 sections，
+  // 再把工具条 insertBefore 到最前，避免挤在已有主题卡片之间。
   container.innerHTML = sections.join("");
+  const firstGroup = container.querySelector(".daily-topic-group, .empty-block");
+  const groupCount = container.querySelectorAll(".daily-topic-group").length;
+  if (firstGroup && groupCount > 0 && !(firstGroup.classList.contains("empty-block"))) {
+    const dailyFoldedCount = container.querySelectorAll(".daily-topic-group.card-folded").length;
+    const bar = document.createElement("div");
+    bar.className = "fold-batch-bar";
+    bar.innerHTML = html`
+      <span class="batch-label">卡片折叠：${dailyFoldedCount ? `已折叠 ${dailyFoldedCount}/${groupCount}` : `共 ${groupCount} 个分区`}</span>
+      <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="${containerId}" data-fold-target=".daily-topic-group" title="把当前日期全部主题分区折叠成标题条">全部折叠</button>
+      <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="${containerId}" data-fold-target=".daily-topic-group" title="展开全部主题分区">全部展开</button>
+    `;
+    container.insertBefore(bar, firstGroup);
+    bindCardFoldBatch(bar);
+  }
   // Wire expand/collapse per topic card.
   container.querySelectorAll("[data-topic-toggle]").forEach((button) => {
     button.addEventListener("click", () => toggleTopicPapers(button.dataset.topicToggle, source));
@@ -1099,6 +1116,7 @@ function renderDailyByTopic(containerId, papers, source) {
     }
   });
   bindPaperCardActions(container);
+  bindCardFoldToggles(container);
 }
 
 function topicSection(topic, list, containerId) {
@@ -1106,8 +1124,10 @@ function topicSection(topic, list, containerId) {
   const shown = list.slice(0, quota);
   const expanded = state.expandedTopics.has(topic.id);
   const moreCount = list.length - shown.length;
+  const groupKey = `dailygroup:${topic.id}`;
+  const groupFolded = state.foldedCards.has(groupKey);
   return html`
-    <section class="daily-topic-group" data-topic-group="${topic.id}">
+    <section class="daily-topic-group card-collapsible ${groupFolded ? "card-folded" : ""}" data-fold-key="${groupKey}">
       <button class="daily-topic-card" type="button" data-topic-toggle="${topic.id}">
         <span class="daily-topic-head">
           <strong>${topicName(topic)}</strong>
@@ -1120,19 +1140,29 @@ function topicSection(topic, list, containerId) {
         ${raw(shown.map((paper) => paperCard(paper)).join(""))}
         ${raw(moreCount > 0 ? html`<p class="meta daily-topic-more">该主题共 ${list.length} 篇，此处展示其中 ${shown.length} 篇。</p>` : "")}
       </div>
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="${escapeHtml(topicName(topic))}">${escapeHtml(topicName(topic))}<span class="meta">${list.length} 篇</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="${groupKey}" data-fold-restore title="展开该主题"><span class="fold-icon">▸</span>展开</button>
+      </div>
     </section>
   `;
 }
 
 function untaggedSection(list, containerId) {
+  const groupKey = "dailygroup:__untagged__";
+  const groupFolded = state.foldedCards.has(groupKey);
   return html`
-    <section class="daily-topic-group" data-topic-group="__untagged__">
+    <section class="daily-topic-group card-collapsible ${groupFolded ? "card-folded" : ""}" data-topic-group="__untagged__" data-fold-key="${groupKey}">
       <button class="daily-topic-card" type="button" data-topic-toggle="__untagged__">
         <span class="daily-topic-head"><strong>未分类</strong><span class="tag">${list.length} 篇</span></span>
         <span class="expand-icon ${state.expandedTopics.has("__untagged__") ? "expanded" : ""}">▸</span>
       </button>
       <div class="daily-topic-papers ${state.expandedTopics.has("__untagged__") ? "" : "hidden"}" data-topic-papers="__untagged__">
         ${raw(list.map((paper) => paperCard(paper)).join(""))}
+      </div>
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="未分类">未分类<span class="meta">${list.length} 篇</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="${groupKey}" data-fold-restore title="展开该主题"><span class="fold-icon">▸</span>展开</button>
       </div>
     </section>
   `;
@@ -1363,8 +1393,19 @@ function renderPaperList(containerId, papers) {
     container.innerHTML = emptyBlock("当前筛选条件下没有论文。");
     return;
   }
-  container.innerHTML = papers.map((paper) => paperCard(paper)).join("");
+  const foldedCount = [...papers].filter((paper) => state.foldedCards.has(`paper:${getPaperId(paper)}`)).length;
+  container.innerHTML = html`
+    ${raw(papers.length ? html`
+      <div class="fold-batch-bar">
+        <span class="batch-label">卡片折叠：${foldedCount ? `已折叠 ${foldedCount}/${papers.length}` : `共 ${papers.length} 张`}</span>
+        <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="${containerId}" title="把当前列表全部卡片折叠成标题条">全部折叠</button>
+        <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="${containerId}" title="展开当前列表全部卡片">全部展开</button>
+      </div>
+    ` : "")}
+    ${raw(papers.map((paper) => paperCard(paper)).join(""))}
+  `;
   bindPaperCardActions(container);
+  bindCardFoldBatch(container);
 }
 
 // Reset all paper-library filters back to defaults and re-render.
@@ -1400,8 +1441,9 @@ function paperCard(paper) {
   }[String(status).toLowerCase()] || status;
   const cardId = `paper-card-${id}`;
   const bodyId = `paper-body-${id}`;
+  const folded = state.foldedCards.has(`paper:${id}`);
   return html`
-    <article class="paper-card" id="${cardId}">
+    <article class="paper-card card-collapsible ${folded ? "card-folded" : ""}" id="${cardId}" data-fold-key="paper:${id}">
       <div class="paper-card-header" data-toggle-card="${id}">
         <input type="checkbox" class="paper-batch-check" data-batch-check="${id}" title="选择此论文" ${state.batchSelected.has(id) ? "checked" : ""}>
         <div>
@@ -1411,7 +1453,7 @@ function paperCard(paper) {
           ${raw(paperModelScore(paper) != null ? html`<span class="paper-score-badge" title="大模型研读综合评分（0-10）">研读分 ${paperModelScore(paper)}</span>` : "")}
           ${raw(paperMetaTags(paper).map((tag) => html`<span class="paper-meta-tag ${tag.cls}">${tag.label}</span>`).join(" "))}
         </div>
-        <div class="paper-card-meta-actions">${raw(topics.map((topic) => html`<span class="tag">${topic}</span>`).join(" "))} <span class="state ${String(status).toLowerCase()}">${statusLabel}</span><span class="expand-icon" id="expand-${id}">▸</span></div>
+        <div class="paper-card-meta-actions">${raw(topics.map((topic) => html`<span class="tag">${topic}</span>`).join(" "))} <span class="state ${String(status).toLowerCase()}">${statusLabel}</span><button class="card-fold-toggle" type="button" data-fold="paper:${id}" title="${folded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${folded ? "展开" : "收起"}</button></div>
       </div>
       <div class="paper-card-body hidden" id="${bodyId}">
         ${raw(paper.method_summary ? html`<p class="paper-one-liner"><strong>一句话摘要：</strong>${paper.method_summary}</p>` : "")}
@@ -1429,6 +1471,10 @@ function paperCard(paper) {
           <button class="secondary" type="button" data-similar-papers="${id}">相似论文</button>
         </div>
       </div>
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="${escapeHtml(title)}">${raw(highlightQuery(title, currentQuery))}<span class="meta">${escapeHtml(statusLabel)}</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="paper:${id}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+      </div>
     </article>
   `;
 }
@@ -1443,7 +1489,16 @@ function buildCardExternalLinks(paper) {
   return html`<p class="paper-ext-links">${links.join(" ")}</p>`;
 }
 
+// 给容器内所有逐卡折叠按钮（[data-fold]）绑定点击。渲染后调用一次即可；
+// 因为每次渲染都会创建新按钮，所以必须「渲染 → 绑定」，不能靠一次性委托。
+function bindCardFoldToggles(container) {
+  container.querySelectorAll("[data-fold]").forEach((button) => {
+    button.addEventListener("click", () => toggleCardFold(button.dataset.fold, button));
+  });
+}
+
 function bindPaperCardActions(container) {
+  bindCardFoldToggles(container);
   container.querySelectorAll("[data-open-paper]").forEach((button) => {
     button.addEventListener("click", () => openPaper(button.dataset.openPaper));
   });
@@ -1488,6 +1543,84 @@ function bindPaperCardActions(container) {
       if (checkbox.checked) state.batchSelected.add(paperId);
       else state.batchSelected.delete(paperId);
       updateBatchSelectionUi();
+    });
+  });
+}
+
+// ---- 卡片折叠（collapse）通用机制 ----
+// state.foldedCards 记录被折叠卡片的 key（如 paper:<id>），供重渲染恢复。
+// 任何卡片元素带上 .card-collapsible + data-fold-key 即可参与折叠。
+
+function isCardFolded(key) {
+  return state.foldedCards.has(key);
+}
+
+// 切换某张卡的折叠状态，并同步更新 DOM（加上/移除 .card-folded）。
+// 传 card 时直接原地更新；批量操作时传入 sequenceKey 用于区分。
+function toggleCardFold(key, buttonOrCard) {
+  const card = buttonOrCard && buttonOrCard.closest
+    ? buttonOrCard.closest(".card-collapsible")
+    : buttonOrCard;
+  const nowFolded = state.foldedCards.has(key);
+  if (nowFolded) state.foldedCards.delete(key);
+  else state.foldedCards.add(key);
+  // 折叠时顺带把卡片 body 隐藏，恢复时不自动展开 body（保持用户选择）。
+  if (card) {
+    card.classList.toggle("card-folded", !nowFolded);
+    updateFoldButtonState(card, !nowFolded);
+  }
+}
+
+// 更新卡片内部折叠按钮文字/图标，使折叠状态在重建后保持一致。
+function updateFoldButtonState(card, folded) {
+  card.querySelectorAll("[data-fold-restore]").forEach((btn) => {
+    btn.innerHTML = `<span class="fold-icon">▸</span>展开`;
+    btn.title = "展开这张卡片";
+  });
+  card.querySelectorAll("[data-fold]:not([data-fold-restore])").forEach((btn) => {
+    btn.innerHTML = `<span class="fold-icon">▸</span>${folded ? "展开" : "收起"}`;
+    btn.title = folded ? "展开这张卡片" : "折叠这张卡片，只保留标题条";
+  });
+}
+
+// 对容器内所有 .card-collapsible 卡片执行折叠/展开（批量）。
+// 可选 selector（如 ".daily-topic-group"）限定只折叠该类型的卡片，
+// 用于「折叠分区但不连带内部论文卡片」的场景。
+function setAllCardsFolded(container, folded, selector) {
+  if (!container) return;
+  const cards = selector ? container.querySelectorAll(selector) : container.querySelectorAll(".card-collapsible");
+  cards.forEach((card) => {
+    const key = card.dataset.foldKey;
+    if (!key) return;
+    if (folded) state.foldedCards.add(key);
+    else state.foldedCards.delete(key);
+    card.classList.toggle("card-folded", folded);
+    updateFoldButtonState(card, folded);
+  });
+}
+
+// 批量「全部折叠 / 全部展开」按钮。传 data-fold-all-scope 指定容器 id，
+// 传 data-fold-target 指定只折叠的选择器（例如仪表盘只折叠主题分区，
+// 不连带折叠分区内展开的论文卡片）。未指定 scope 时用按钮所在容器。
+function bindCardFoldBatch(container) {
+  container.querySelectorAll("[data-fold-all], [data-expand-all]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const scopeId = btn.dataset.foldAllScope;
+      const target = scopeId ? document.getElementById(scopeId) : container;
+      const doingFold = btn.hasAttribute("data-fold-all");
+      const selector = btn.dataset.foldTarget || null;
+      setAllCardsFolded(target, doingFold, selector);
+      const foldable = (selector ? target?.querySelectorAll(selector) : target?.querySelectorAll(".card-collapsible"))?.length || 0;
+      if (foldable) {
+        // 更新与按钮同处一条 fold-batch-bar 的统计标签。
+        const labelEl = btn.closest(".fold-batch-bar")?.querySelector(".batch-label");
+        if (labelEl) {
+          const foldedCount = (selector ? target.querySelectorAll(`${selector}.card-folded`) : target.querySelectorAll(".card-collapsible.card-folded"))?.length || 0;
+          labelEl.textContent = foldedCount
+            ? `已折叠 ${foldedCount}/${foldable}`
+            : `共 ${foldable} 张`;
+        }
+      }
     });
   });
 }
@@ -2188,15 +2321,24 @@ function renderTopics() {
     container.innerHTML = emptyBlock("后端尚未返回主题配置。");
     return;
   }
-  container.innerHTML = state.topics.map((topic) => {
+  const topicFoldedCount = state.topics.filter((topic) => state.foldedCards.has(`topic:${topic.id}`)).length;
+  container.innerHTML = html`
+    <div class="fold-batch-bar">
+      <span class="batch-label">卡片折叠：${topicFoldedCount ? `已折叠 ${topicFoldedCount}/${state.topics.length}` : `共 ${state.topics.length} 张`}</span>
+      <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="topicTree" title="把当前主题卡片全部折叠成标题条">全部折叠</button>
+      <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="topicTree" title="展开当前主题卡片">全部展开</button>
+    </div>
+    ${raw(state.topics.map((topic) => {
     const expanded = state.selectedTopicDigest && state.selectedTopicDigest.topicId === topic.id;
     const editing = state.editingTopicId === topic.id;
     const count = topicPaperCount(topic.id);
     const countLabel = state.browseMode === "all" ? "共 " : "今日 ";
     const viewLabel = state.browseMode === "all" ? "查看全部论文" : "查看今日论文";
+    const topicKey = `topic:${topic.id}`;
+    const topicFolded = state.foldedCards.has(topicKey);
     return html`
-      <article class="topic-card">
-        <h3>${topicName(topic)}</h3>
+      <article class="topic-card card-collapsible ${topicFolded ? "card-folded" : ""}" data-fold-key="${topicKey}">
+        <h3>${topicName(topic)}<button class="card-fold-toggle" type="button" data-fold="${topicKey}" title="${topicFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${topicFolded ? "展开" : "收起"}</button></h3>
         <p>${topic.name_en || topic.description || "无主题说明"}</p>
         <div>${raw(normalizeKeywords(topic).map((keyword) => html`<span class="tag">${keyword}</span>`).join(" "))}</div>
         <p class="meta">${countLabel}${count} 篇</p>
@@ -2207,10 +2349,17 @@ function renderTopics() {
           <button class="danger-secondary" type="button" data-topic-delete="${topic.id}" title="删除该主题">删除</button>
         </div>
         ${editing ? raw(renderTopicEditForm(topic)) : ""}
+        <div class="card-fold-bar">
+          <span class="fold-snippet" title="${escapeHtml(topicName(topic))}">${escapeHtml(topicName(topic))}<span class="meta">${escapeHtml(countLabel)}${count} 篇</span></span>
+          <button class="card-fold-toggle" type="button" data-fold="${topicKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+        </div>
       </article>
       ${expanded ? raw(renderInlineTopicDigest(topic.id)) : ""}
     `;
-  }).join("");
+  }).join(""))}
+  `;
+  bindCardFoldBatch(container);
+  bindCardFoldToggles(container);
   container.querySelectorAll("[data-topic-digest]").forEach((button) => {
     button.addEventListener("click", () => loadTopicDigest(button.dataset.topicDigest));
   });
@@ -2486,15 +2635,19 @@ function renderNotebookView() {
     const cardId = `nb-card-${id}`;
     const bodyId = `nb-body-${id}`;
     const iconId = `nb-expand-${id}`;
+    const nbKey = `notebook:${id}`;
+    const nbFolded = state.foldedCards.has(nbKey);
+    const nbTitle = paperTitle(paper);
     return html`
-      <article class="paper-card" id="${cardId}">
+      <article class="paper-card card-collapsible ${nbFolded ? "card-folded" : ""}" id="${cardId}" data-fold-key="${nbKey}">
         <div class="paper-card-header" data-toggle-nb="${id}">
           <div>
-            <h3>${paperTitle(paper)}</h3>
+            <h3>${nbTitle}</h3>
             <p class="meta">${authorText(paper) || identifierText(paper)}</p>
           </div>
           <div class="paper-card-meta-actions">
             ${raw(normalizeTopics(paper).map((topic) => html`<span class="tag">${topic}</span>`).join(" "))}
+            <button class="card-fold-toggle" type="button" data-fold="${nbKey}" title="${nbFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${nbFolded ? "展开" : "收起"}</button>
             <span class="expand-icon" id="${iconId}">▸</span>
           </div>
         </div>
@@ -2524,10 +2677,30 @@ function renderNotebookView() {
             <button class="secondary" type="button" data-notebook-remove="${id}">移出笔记本</button>
           </div>
         </div>
+        <div class="card-fold-bar">
+          <span class="fold-snippet" title="${escapeHtml(nbTitle)}">${escapeHtml(nbTitle)}</span>
+          <button class="card-fold-toggle" type="button" data-fold="${nbKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+        </div>
       </article>
     `;
   }).join("");
 
+  bindCardFoldToggles(listContainer);
+  // 笔记本列表顶部加批量折叠/展开工具条
+  const firstNb = listContainer.querySelector(".paper-card, .empty-block");
+  if (firstNb && !(firstNb.classList.contains("empty-block"))) {
+    const nbCount = listContainer.querySelectorAll(".paper-card").length;
+    const nbFoldedCount = listContainer.querySelectorAll(".paper-card.card-folded").length;
+    const bar = document.createElement("div");
+    bar.className = "fold-batch-bar";
+    bar.innerHTML = html`
+      <span class="batch-label">卡片折叠：${nbFoldedCount ? `已折叠 ${nbFoldedCount}/${nbCount}` : `共 ${nbCount} 张`}</span>
+      <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="notebookPaperList" title="把当前笔记本卡片全部折叠成标题条">全部折叠</button>
+      <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="notebookPaperList" title="展开当前笔记本卡片">全部展开</button>
+    `;
+    listContainer.insertBefore(bar, firstNb);
+    bindCardFoldBatch(bar);
+  }
   listContainer.querySelectorAll("[data-toggle-nb]").forEach((header) => {
     header.addEventListener("click", () => {
       const paperId = header.dataset.toggleNb;
@@ -2602,13 +2775,16 @@ function renderJobs() {
     container.innerHTML = pipelineHtml + html`<h3 class="daily-history-title">全部异步任务（按最近更新倒序）</h3>` + emptyBlock("没有符合筛选条件的任务。");
     return;
   }
-  const jobRows = visibleJobs.map((job) => {
+  const jobRows = visibleJobs.map((job, index) => {
     const status = job.status || "unknown";
     const actionError = state.jobActionErrors.get(job.id);
+    const jobKey = `job:${job.id || job.job_id || index}`;
+    const jobFolded = state.foldedCards.has(jobKey);
+    const jobLabel = job.kind || job.id || "任务";
     return html`
-      <div class="job-row">
+      <div class="job-row card-collapsible ${jobFolded ? "card-folded" : ""}" data-fold-key="${jobKey}">
         <div>
-          <strong>${job.kind || job.id || "任务"}</strong>
+          <strong>${jobLabel}</strong>
           <p class="meta">${job.id || job.job_id || ""}</p>
         </div>
         <span class="state ${String(status).toLowerCase()}">${jobStatusLabel(status)}</span>
@@ -2620,13 +2796,28 @@ function renderJobs() {
         <div class="job-actions">
           ${raw(canRetryJob(job) ? html`<button class="secondary compact-action" type="button" data-job-action="retry" data-job-id="${job.id || job.job_id}">重试</button>` : "")}
           ${raw(canCancelJob(job) ? html`<button class="danger-secondary compact-action" type="button" data-job-action="cancel" data-job-id="${job.id || job.job_id}">取消</button>` : "")}
+          <button class="card-fold-toggle" type="button" data-fold="${jobKey}" title="${jobFolded ? "展开这张卡片" : "折叠这张任务，只保留标题条"}"><span class="fold-icon">▸</span>${jobFolded ? "展开" : "收起"}</button>
+        </div>
+        <div class="card-fold-bar">
+          <span class="fold-snippet" title="${escapeHtml(jobLabel)}">${escapeHtml(jobLabel)}<span class="meta">${escapeHtml(jobStatusLabel(status))}</span></span>
+          <button class="card-fold-toggle" type="button" data-fold="${jobKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
         </div>
       </div>
     `;
   }).join("");
+  const jobFoldedCount = visibleJobs.filter((job, index) => state.foldedCards.has(`job:${job.id || job.job_id || index}`)).length;
   container.innerHTML = pipelineHtml
     + html`<h3 class="daily-history-title">全部异步任务（按最近更新倒序）</h3>`
+    + html`
+      <div class="fold-batch-bar">
+        <span class="batch-label">卡片折叠：${jobFoldedCount ? `已折叠 ${jobFoldedCount}/${visibleJobs.length}` : `共 ${visibleJobs.length} 张`}</span>
+        <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="jobList" title="把当前任务列表全部折叠成标题条">全部折叠</button>
+        <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="jobList" title="展开当前任务列表">全部展开</button>
+      </div>
+    `
     + jobRows;
+  bindCardFoldToggles(container);
+  bindCardFoldBatch(container);
   container.querySelectorAll("[data-job-action]").forEach((button) => {
     button.addEventListener("click", () => runJobAction(button.dataset.jobId, button.dataset.jobAction));
   });
@@ -3014,25 +3205,43 @@ function renderRelations() {
     const extraSummary = relFilter
       ? html`<span class="tag">命中 ${totalShown}</span>`
       : "";
+    const relFoldedCount = visible.filter((_, index) => state.foldedCards.has(`relation:${index}`)).length;
     container.innerHTML = html`
+      <div class="fold-batch-bar">
+        <span class="batch-label">卡片折叠：${relFoldedCount ? `已折叠 ${relFoldedCount}/${visible.length}` : `共 ${visible.length} 张`}</span>
+        <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="relationGraph" title="把当前关系卡片全部折叠成标题条">全部折叠</button>
+        <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="relationGraph" title="展开当前关系卡片">全部展开</button>
+      </div>
       <div class="relations-type-summary">${raw(typeSummary)}${raw(extraSummary)}</div>
       <div class="relation-grid-inner">
-        ${raw(visible.map((relation) => html`
-          <article class="relation-card">
+        ${raw(visible.map((relation, index) => {
+          const relKey = `relation:${index}`;
+          const relFolded = state.foldedCards.has(relKey);
+          const relTitle = `${relation.from_title || relation.from_paper_id || "来源论文"} → ${relation.to_title || relation.to_paper_id || "目标论文"}`;
+          return html`
+          <article class="relation-card card-collapsible ${relFolded ? "card-folded" : ""}" data-fold-key="${relKey}">
             <div class="relation-card-head">
               <span class="tag">${relation.relation_type || "relation"}</span>
               <span class="pill confidence-pill">置信度 ${(Number(relation.confidence) || 0).toFixed(2)}</span>
+              <button class="card-fold-toggle" type="button" data-fold="${relKey}" title="${relFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${relFolded ? "展开" : "收起"}</button>
             </div>
             <h3 title="${relation.from_title || relation.from_paper_id || ""}">${relation.from_title || relation.from_paper_id || "来源论文"}</h3>
             <p class="relation-arrow">→ 关联到</p>
             <h3 class="relation-to" title="${relation.to_title || relation.to_paper_id || ""}">${relation.to_title || relation.to_paper_id || "目标论文"}</h3>
             <p>${relation.reason || relation.summary || relation.description || "无关系说明"}</p>
             <p class="meta">${normalizeList(relation.evidence, ["items"]).map(evidenceText).join("；")}</p>
+            <div class="card-fold-bar">
+              <span class="fold-snippet" title="${escapeHtml(relTitle)}">${escapeHtml(relTitle)}</span>
+              <button class="card-fold-toggle" type="button" data-fold="${relKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+            </div>
           </article>
-        `).join(""))}
+        `;
+        }).join(""))}
       </div>
       ${raw(showMore ? html`<button class="secondary" type="button" id="relationsShowMoreBtn">显示更多（${totalShown - limit} 条）</button>` : "")}
     `;
+    bindCardFoldBatch(container);
+    bindCardFoldToggles(container);
     const showMoreBtn = container.querySelector("#relationsShowMoreBtn");
     if (showMoreBtn) {
       showMoreBtn.addEventListener("click", () => {
@@ -3189,6 +3398,7 @@ function renderDraftPreview() {
     `
     : emptyBlock(selectedCandidate ? "该候选尚未生成草稿；需先人工审批，再点击生成草稿。" : "暂无交底书草稿。");
   preview.innerHTML = html`${raw(candidateHtml)}${raw(stageShell)}${raw(draftShell)}`;
+  bindCardFoldToggles(preview);
   if (selectedDraft) {
     document.getElementById("selectedDraftBody").textContent = selectedDraft.markdown || JSON.stringify(selectedDraft, null, 2);
     const reviseBtn = document.getElementById("submitReviseButton");
@@ -3257,10 +3467,14 @@ function candidateCard(candidate) {
   const priorArt = priorArtJob(candidate.id);
   const priorArtSucceeded = priorArt?.status === "succeeded";
   const overrideId = `override-${candidate.id}`;
+  const candKey = `candidate:${candidate.id}`;
+  const candFolded = state.foldedCards.has(candKey);
+  const candTitle = candidate.title || candidate.id;
   return html`
-    <article class="candidate-card ${candidate.id === state.selectedCandidateId ? "active" : ""}">
+    <article class="candidate-card ${candidate.id === state.selectedCandidateId ? "active" : ""} card-collapsible ${candFolded ? "card-folded" : ""}" data-fold-key="${candKey}">
       <button class="link-button" type="button" data-candidate-select="${candidate.id}"><strong>${candidate.title || candidate.id}</strong></button>
       <span class="state ${status}">${status}</span>
+      <button class="card-fold-toggle" type="button" data-fold="${candKey}" title="${candFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${candFolded ? "展开" : "收起"}</button>
       <p>${candidate.problem_statement || "未填写技术问题。"}</p>
       <p class="meta">查新状态：${priorArt ? `${priorArt.status} ${jsonSummary(priorArt.error) || jsonSummary(priorArt.result)}` : "尚未运行"}</p>
       <div class="paper-actions">
@@ -3277,6 +3491,10 @@ function candidateCard(candidate) {
         <button class="danger-secondary" type="button" data-candidate-override="${candidate.id}">带警告 override 审批</button>
       ` : "")}
       <p class="meta">${candidate.sources?.length || 0} 个来源 · 普通审批仅在查新任务成功后可用</p>
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="${escapeHtml(candTitle)}">${escapeHtml(candTitle)}<span class="meta">${escapeHtml(status)}</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="${candKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+      </div>
     </article>
   `;
 }
@@ -3397,11 +3615,15 @@ function renderWorkflows() {
     return;
   }
   const definitions = normalizeList(state.workflows, ["items", "workflows"]);
-  catalog.innerHTML = definitions.length ? definitions.map((workflow) => html`
-    <section class="panel workflow-card">
+  catalog.innerHTML = definitions.length ? definitions.map((workflow, wfIndex) => {
+    const wfKey = `workflow:${workflow.id || workflow.name || wfIndex}`;
+    const wfFolded = state.foldedCards.has(wfKey);
+    return html`
+    <section class="panel workflow-card card-collapsible ${wfFolded ? "card-folded" : ""}" data-fold-key="${wfKey}">
       <div class="panel-heading">
         <div><h2>${workflow.name}</h2><p>${workflow.description}</p></div>
         <span class="state ${workflow.enabled ? "success" : "retryable_failed"}">${workflow.enabled ? "可运行" : "待配置"}</span>
+        <button class="card-fold-toggle" type="button" data-fold="${wfKey}" title="${wfFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${wfFolded ? "展开" : "收起"}</button>
       </div>
       <div class="workflow-dag">
         ${raw((workflow.nodes || []).map((node, index) => html`
@@ -3414,16 +3636,42 @@ function renderWorkflows() {
         `).join(""))}
       </div>
       ${raw(workflow.schedule ? html`<p class="meta workflow-schedule">每日 ${workflow.schedule.daily_hour}:00 · ${workflow.schedule.timezone} · 回看 ${workflow.schedule.lookback_days} 天 · 最多 ${workflow.schedule.max_results} 篇/主题</p>` : "")}
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="${escapeHtml(workflow.name)}">${escapeHtml(workflow.name)}<span class="meta">${workflow.enabled ? "可运行" : "待配置"}</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="${wfKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+      </div>
     </section>
-  `).join("") : emptyBlock("后端未返回内置工作流。");
+  `;
+  }).join("") : emptyBlock("后端未返回内置工作流。");
+  bindCardFoldToggles(catalog);
+  bindCardFoldBatch(catalog);
   const history = normalizeList(state.workflows?.runs, ["items", "runs"]);
-  runs.innerHTML = history.length ? history.map((run) => html`
-    <article class="workflow-run">
-      <div><strong>${run.run_type || run.id}</strong><p class="meta">${run.created_at || ""} · ${run.id}</p></div>
+  runs.innerHTML = history.length ? html`
+    <div class="fold-batch-bar">
+      <span class="batch-label">卡片折叠：共 ${history.length} 张</span>
+      <button class="secondary compact-action" type="button" data-fold-all data-fold-all-scope="workflowRuns" title="把当前运行历史卡片全部折叠成标题条">全部折叠</button>
+      <button class="secondary compact-action" type="button" data-expand-all data-fold-all-scope="workflowRuns" title="展开当前运行历史卡片">全部展开</button>
+    </div>
+    ${raw(history.map((run, runIndex) => {
+      const runKey = `workflowrun:${run.id || runIndex}`;
+      const runFolded = state.foldedCards.has(runKey);
+      const runTitle = run.run_type || run.id;
+      return html`
+    <article class="workflow-run card-collapsible ${runFolded ? "card-folded" : ""}" data-fold-key="${runKey}">
+      <div><strong>${runTitle}</strong><p class="meta">${run.created_at || ""} · ${run.id}</p></div>
       <div class="workflow-step-counts">${raw(Object.entries(run.steps || {}).map(([kind, counts]) => html`<span class="tag">${jobKindLabel(kind)} ${Object.values(counts).reduce((sum, value) => sum + value, 0)}</span>`).join(""))}</div>
       <span class="state ${String(run.status || "queued").toLowerCase()}">${jobStatusLabel(run.status)}</span>
+      <button class="card-fold-toggle" type="button" data-fold="${runKey}" title="${runFolded ? "展开这张卡片" : "折叠这张运行记录"}"><span class="fold-icon">▸</span>${runFolded ? "展开" : "收起"}</button>
+      <div class="card-fold-bar">
+        <span class="fold-snippet" title="${escapeHtml(runTitle)}">${escapeHtml(runTitle)}<span class="meta">${escapeHtml(jobStatusLabel(run.status))}</span></span>
+        <button class="card-fold-toggle" type="button" data-fold="${runKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
+      </div>
     </article>
-  `).join("") : emptyBlock("尚无工作流运行；触发论文发现后会自动创建。 ");
+  `;
+    }).join(""))}
+  ` : emptyBlock("尚无工作流运行；触发论文发现后会自动创建。 ");
+  bindCardFoldToggles(runs);
+  bindCardFoldBatch(runs);
 }
 
 function workflowNodeSummary(node) {

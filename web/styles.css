@@ -1761,6 +1761,120 @@ textarea:focus {
   transform: rotate(90deg);
 }
 
+/* ---- 卡片折叠（collapse）通用机制 ----
+   任何带 .card-collapsible 的卡片都可以被折叠成一条 ~44px 的标题条，
+   用于「卡片过多时把上面的卡片收起来，快速找到下面的卡片」。
+   逐卡控制用右上角的 .card-fold-toggle 按钮；批量控制由各视图的
+   [data-fold-all] / [data-expand-all] 按钮触发（见 JS）。*/
+.card-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.card-fold-toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.card-fold-toggle .fold-icon {
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+
+.card-collapsible.card-folded .fold-icon {
+  transform: rotate(90deg);
+}
+
+/* 折叠后的卡片：压缩成一条标题条，隐藏所有二级内容 */
+.card-collapsible.card-folded {
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.card-collapsible.card-folded > *:not(.card-fold-bar) {
+  display: none;
+}
+
+/* job-row 是 5 列 grid，fold-bar 需占满整行 */
+.job-row.card-collapsible.card-folded {
+  display: block;
+}
+
+/* ---- 折叠条：始终显示一条，包含折叠按钮与折叠状态信息 ---- */
+.card-fold-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.card-collapsible.card-folded .card-fold-bar {
+  display: flex;
+}
+
+/* 一些卡片使用 display:grid（如 job-row）。折叠时 fold-bar 必须横跨整行，
+   否则 grid 会把它挤进某一列。 */
+.card-collapsible.card-folded .card-fold-bar {
+  grid-column: 1 / -1;
+}
+
+.card-fold-bar .fold-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.card-fold-bar .fold-snippet .meta {
+  font-weight: 400;
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.card-fold-bar .card-fold-toggle {
+  flex-shrink: 0;
+}
+
+/* 批量折叠/展开工具条（loader 区顶部） */
+.fold-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.fold-batch-bar .batch-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fold-batch-bar .secondary.compact-action {
+  min-height: 28px;
+}
+
 .digest-subheading {
   margin-bottom: 8px;
   color: var(--muted);
