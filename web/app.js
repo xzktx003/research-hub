@@ -1,6 +1,17 @@
 const API_BASE = "/api/v1";
 const today = new Date().toISOString().slice(0, 10);
 
+// 搜索框输入防抖：避免每敲一个字符就整站重渲染（大列表下会卡顿）。
+// 只对「搜索」输入做防抖，其它筛选 change 事件仍实时渲染。
+let _searchDebounceTimer = null;
+function debounceRenderSearch() {
+  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    _searchDebounceTimer = null;
+    render();
+  }, 160);
+}
+
 function addDays(dateString, amount) {
   const d = new Date(`${dateString}T00:00:00`);
   d.setDate(d.getDate() + amount);
@@ -201,7 +212,7 @@ function bindNavigation() {
 
 function bindControls() {
   document.getElementById("refreshButton").addEventListener("click", loadAll);
-  document.getElementById("globalSearch").addEventListener("input", render);
+  document.getElementById("globalSearch").addEventListener("input", debounceRenderSearch);
   document.getElementById("topicFilter").addEventListener("change", render);
   document.getElementById("statusFilter").addEventListener("change", render);
   document.getElementById("sortFilter").addEventListener("change", render);
@@ -236,6 +247,8 @@ function bindControls() {
   document.getElementById("dailyPrevDay")?.addEventListener("click", () => browseDateBy(-1));
   document.getElementById("dailyNextDay")?.addEventListener("click", () => browseDateBy(1));
   document.getElementById("dailyJumpToday")?.addEventListener("click", () => {
+    // 若当前处于「所有日期」模式，点「今天」应切回日期模式并回到今天。
+    if (state.browseMode === "all") state.browseMode = "date";
     state.browseDate = today;
     const dateInput = document.getElementById("dailyDateFilter");
     if (dateInput) dateInput.value = today;
@@ -460,6 +473,7 @@ async function loadAllPapers() {
   // Pull the full paper library (all dates) so the library view and history
   // browsing work across the whole corpus, independent of the selected day.
   const seq = state.loadSeq;
+  state.allPapersLoading = true;
   try {
     const data = await apiJson("/papers?all=1");
     if (seq !== state.loadSeq) return; // superseded by a newer load
@@ -467,9 +481,16 @@ async function loadAllPapers() {
   } catch {
     if (seq !== state.loadSeq) return;
     state.allPapers = [...state.papers];
+  } finally {
+    state.allPapersLoading = false;
   }
   if (seq !== state.loadSeq) return;
   renderPaperLibrary();
+  // 全库加载完成后，阅读台目录和专利候选选择器都可能依赖 allPapers 兜底
+  // （例如直接从全库点开一篇不属于今日列表的论文）：此刻重渲染一次，避免停留空态。
+  if (state.activeView === "reader") renderReader();
+  if (state.activeView === "patents") renderPatentWorkspace();
+  loadHistoryPapers();
 }
 
 async function loadHistoryPapers() {
@@ -478,14 +499,19 @@ async function loadHistoryPapers() {
     state.historyLoading = false;
     state.historyError = null;
     if (!state.allPapers.length && !state.allPapersLoading) {
+      // 全库尚未拉取：自行拉取并置 loading 标志（renderHistoryPapers 据此显示加载态）。
       state.allPapersLoading = true;
+      renderHistoryPapers();
       try {
         const data = await apiJson("/papers?all=1");
         state.allPapers = normalizeList(data, ["papers", "items", "results", "data"]);
+      } catch {
+        state.allPapers = state.allPapers || [];
       } finally {
         state.allPapersLoading = false;
       }
     }
+    // 全库仍在加载时由 renderHistoryPapers 显示 loading，而非误展示空列表。
     state.historyPapers = state.allPapers;
     renderHistoryPapers();
     renderTopics();
@@ -520,13 +546,11 @@ function renderSearchResults(container) {
     return;
   }
   if (state.onlineSearching) {
-    container.innerHTML = html`
-      <div class="search-results-head">
-        <span class="pill">本地未找到匹配</span>
-        <span class="meta">正在联网检索“${query}”...</span>
-      </div>
-      ${loadingBlock("正在联网检索论文...")}
-    `;
+    // 同理：loadingBlock 返回 HTML 字符串，直接拼接避免转义。
+    container.innerHTML = `<div class="search-results-head">
+      <span class="pill">本地未找到匹配</span>
+      <span class="meta">正在联网检索“${escapeHtml(query)}”...</span>
+    </div>${loadingBlock("正在联网检索论文...")}`;
     return;
   }
   const local = filteredPapers();
@@ -544,10 +568,9 @@ function renderSearchResults(container) {
     return;
   }
   if (state.onlineError) {
-    container.innerHTML = html`
-      <div class="search-results-head"><span class="pill">联网检索失败</span></div>
-      ${errorBlock(`联网检索失败：${state.onlineError}`)}
-    `;
+    // errorBlock 返回 HTML 字符串，必须直接拼接，不能再用外层 html`` 包裹
+    // （否则会被 escapeHtml 转义成 &lt;div&gt; 字面文本，错误提示显示不出来）。
+    container.innerHTML = `<div class="search-results-head"><span class="pill">联网检索失败</span></div>${errorBlock(`联网检索失败：${state.onlineError}`)}`;
     return;
   }
   if (state.allPapers && state.allPapers.length) {
@@ -1912,6 +1935,9 @@ function renderReaderPrevNextState(selectedInList) {
 }
 
 // 阅读台目录的当前可见论文序列（应用搜索过滤），供目录渲染与上下篇导航共用。
+// 关键兜底：即使用户设置了搜索/筛选而 `filteredPapers()` 为空，只要当前选中的
+// 论文能被找到（含全库 allPapers），也把它收入目录——避免「从全库/推荐点开一篇
+// 论文阅读台却空白」。
 function readerDirectoryPapers() {
   const filter = readerIndexFilter();
   const papers = filteredPapers();
@@ -1920,10 +1946,15 @@ function readerDirectoryPapers() {
     papers.unshift(currentPaper);
   }
   if (!filter) return papers;
-  return papers.filter((paper) => {
+  const matched = papers.filter((paper) => {
     const haystack = `${paperTitle(paper)} ${normalizeTopics(paper).join(" ")} ${paper.authors ? (Array.isArray(paper.authors) ? paper.authors.map((a) => (typeof a === "string" ? a : a?.name)).join(" ") : "") : ""} ${paper.abstract || ""}`.toLowerCase();
     return haystack.includes(filter);
   });
+  // 目录被搜索过滤后，仍保留当前选中论文以免文档区悬空。
+  if (state.selectedPaperId && !matched.some((paper) => getPaperId(paper) === state.selectedPaperId) && currentPaper) {
+    matched.unshift(currentPaper);
+  }
+  return matched;
 }
 
 function renderReader() {
@@ -1936,11 +1967,17 @@ function renderReader() {
     return;
   }
   const papers = readerDirectoryPapers();
-  if (!papers.length) {
+  const selectedPaperCandidate = selectedPaper();
+  if (!papers.length && !selectedPaperCandidate) {
     list.innerHTML = readerIndexFilter() ? emptyBlock("没有匹配的论文。") : emptyBlock("没有可阅读论文。");
     document.getElementById("documentContent").innerHTML = emptyBlock("选择论文后显示 PDF、Markdown、研读报告或证据。");
     document.getElementById("technicalCards").innerHTML = emptyBlock("暂无技术卡片。");
     return;
+  }
+  // 目录为空但当前选中论文在全集里可找到（不在今日列表时尤其常见）：目录保留
+  // 该论文一项，文档区照常渲染，避免「从全库/推荐点开却空白」。
+  if (!papers.length && selectedPaperCandidate) {
+    papers.push(selectedPaperCandidate);
   }
   // Do NOT auto-select the first paper here. If no paper has been chosen yet,
   // the reader stays in its "enter reading" state (directory visible, no
@@ -3225,7 +3262,7 @@ function renderRelations() {
     const extraSummary = relFilter
       ? html`<span class="tag">命中 ${totalShown}</span>`
       : "";
-    const relFoldedCount = visible.filter((_, index) => state.foldedCards.has(`relation:${index}`)).length;
+    const relFoldedCount = visible.filter((_, index) => state.foldedCards.has(relationFoldKey(visible[index]))).length;
     container.innerHTML = html`
       <div class="fold-batch-bar">
         <span class="batch-label">卡片折叠：${relFoldedCount ? `已折叠 ${relFoldedCount}/${visible.length}` : `共 ${visible.length} 张`}</span>
@@ -3234,8 +3271,8 @@ function renderRelations() {
       </div>
       <div class="relations-type-summary">${raw(typeSummary)}${raw(extraSummary)}</div>
       <div class="relation-grid-inner">
-        ${raw(visible.map((relation, index) => {
-          const relKey = `relation:${index}`;
+        ${raw(visible.map((relation) => {
+          const relKey = relationFoldKey(relation);
           const relFolded = state.foldedCards.has(relKey);
           const relTitle = `${relation.from_title || relation.from_paper_id || "来源论文"} → ${relation.to_title || relation.to_paper_id || "目标论文"}`;
           return html`
@@ -3292,6 +3329,15 @@ async function loadRelations() {
   renderRelations();
 }
 
+// 关系的稳定折叠 key：来源/目标论文 + 关系类型。排序或翻页后 index 会变，
+// 用稳定 ID 保证折叠状态不因重渲染/筛选而错位。
+function relationFoldKey(relation) {
+  const from = relation?.from_paper_id || relation?.from_id || relation?.from || "";
+  const to = relation?.to_paper_id || relation?.to_id || relation?.to || "";
+  const type = String(relation?.relation_type || relation?.type || "relation").toLowerCase();
+  return `relation:${from}:${to}:${type}`;
+}
+
 async function runRelationsRebuild() {
   const container = document.getElementById("relationGraph");
   const btn = document.getElementById("relationsRebuildBtn");
@@ -3322,11 +3368,19 @@ function renderCandidatePicker() {
     container.innerHTML = errorBlock("论文接口不可用，无法选择专利候选输入。");
     return;
   }
-  if (!state.papers.length) {
+  // 从已知论文全集（今日+全库+笔记本，去重）中选候选，避免今日列表为空时
+  // 「没有可选择论文」。和阅读台共用 knownPapers() 保证口径一致。
+  const candidates = knownPapers();
+  // 全库尚未加载完成时先显示加载，避免误报「没有可选择论文」。
+  if (!candidates.length && state.allPapersLoading) {
+    container.innerHTML = loadingBlock("正在加载可选论文...");
+    return;
+  }
+  if (!candidates.length) {
     container.innerHTML = emptyBlock("没有可选择论文。");
     return;
   }
-  container.innerHTML = state.papers.map((paper) => {
+  container.innerHTML = candidates.map((paper) => {
     const id = getPaperId(paper);
     return html`
       <label class="candidate-row">
@@ -3335,6 +3389,15 @@ function renderCandidatePicker() {
       </label>
     `;
   }).join("");
+  const rows = Array.from(container.querySelectorAll("[data-patent-checkbox]"));
+  if (rows.length > 120) {
+    // 全库较大时默认只展示前 120 行，防止候选选择页一次渲染上千行卡死。
+    rows.slice(120).forEach((checkbox) => checkbox.closest(".candidate-row").classList.add("hidden"));
+    const summary = document.createElement("p");
+    summary.className = "meta candidate-picker-limit";
+    summary.textContent = `论文较多，仅展示前 120 篇供选择；可先到论文库筛选后再来创建候选。`;
+    container.prepend(summary);
+  }
   container.querySelectorAll("[data-patent-checkbox]").forEach((checkbox) => {
     checkbox.addEventListener("change", () => togglePatentSelection(checkbox.dataset.patentCheckbox, checkbox.checked));
   });
@@ -3575,14 +3638,23 @@ function renderSettings() {
     <dt>专利查新</dt><dd>${services.prior_art?.mode === "remote" ? "远程服务 + 本地 CNIPA 回退" : "本地 CNIPA 工具"}</dd>
     <dt>专利导出</dt><dd>服务器内置 Markdown / DOCX 工具</dd>
   `;
-  document.getElementById("capabilityList").innerHTML = Object.entries(state.endpointResults)
-    .map(([key, result]) => html`
-      <div class="gate-item ${result?.ok ? "pass" : "warn"}">
-        <span class="gate-icon">${result?.ok ? "✓" : "!"}</span>
-        <div><strong>${key}</strong><p class="meta">${result?.ok ? `使用 ${result.path}` : (result?.errors || ["未探测"]).join("；")}</p></div>
+  const capEntries = Object.entries(state.endpointResults);
+  const capOk = capEntries.filter(([, result]) => result?.ok);
+  const capBad = capEntries.filter(([, result]) => !result?.ok);
+  document.getElementById("capabilityList").innerHTML = capEntries.length
+    ? html`
+      <div class="gate-item ${capBad.length ? "warn" : "pass"}">
+        <span class="gate-icon">${capBad.length ? "!" : "✓"}</span>
+        <div>
+          <strong>${capBad.length ? `${capBad.length} 个端点异常` : `${capOk.length}/${capEntries.length} 端点均可用`}</strong>
+          <p class="meta">${capBad.length ? "以下端点不可用（点击“刷新数据”可重试）" : "后端全部接口探测正常。"}</p>
+          ${raw(capBad.map(([key, result]) => html`
+            <p class="meta adapter-degraded">${key}：${(result?.errors || ["未探测"]).join("；")}</p>
+          `).join(""))}
+        </div>
       </div>
-    `)
-    .join("");
+    `
+    : emptyBlock("尚未探测端点。");
   renderTopicQuotaGrid();
   renderAdapterHealth("settingsAdapterHealth");
 }
@@ -3770,14 +3842,13 @@ function filteredPapers() {
   const topic = document.getElementById("topicFilter")?.value || "";
   const status = document.getElementById("statusFilter")?.value || "";
   const sortBy = document.getElementById("sortFilter")?.value || "";
-  // When a specific date is selected it is backed by loadAll(), which loads the
-  // date-scoped papers into state.papers; prefer that so the '日期' filter
-  // actually narrows the library grid instead of silently doing nothing.
-  // When a specific date is selected it is backed by loadAll(), which loads the
-  // date-scoped papers into state.papers; prefer that so the '日期' filter
-  // actually narrows the library grid instead of silently doing nothing.
   const dateValue = document.getElementById("dateFilter")?.value || "";
-  const source = dateValue ? state.papers : (state.allPapers.length ? state.allPapers : state.papers);
+  // 日期筛选语义：dateFilter 有值时 state.papers 已被 loadAll 加载为该日期的
+  // 论文（优先使用，保证日期筛选真正窄化列表）；无日期时回退全部论文库，
+  // 避免「今日没有论文但全库有 178 篇」时论文库/阅读台变成空空的。
+  const source = dateValue
+    ? (state.papers.length ? state.papers : (state.allPapers.length ? state.allPapers : state.papers))
+    : (state.allPapers.length ? state.allPapers : state.papers);
   const filtered = source.filter((paper) => {
     const text = paperSearchableText(paper);
     const topics = normalizeTopics(paper);
@@ -3846,9 +3917,17 @@ function selectedPaper() {
   return knownPapers().find((paper) => getPaperId(paper) === state.selectedPaperId) || null;
 }
 
+// 已知论文全集：今日 + 全库 + 笔记本，按 id 去重。
+// 这样「从全库/推荐/关系点进一篇不属于今日列表的论文」时，selectedPaper()
+// 也能找到它，reading台 不会因今日列表为空而空白。已加载的全库优先于 today
+// 列表，避免同 id 出现两条数据。数组顺序：今日在前 → 全库 → 笔记本（仍为
+// 去重后的单一论文对象）。
 function knownPapers() {
   const papers = new Map();
-  [...state.papers, ...state.notebookItems].forEach((paper) => papers.set(getPaperId(paper), paper));
+  [...state.papers, ...state.allPapers, ...state.notebookItems].forEach((paper) => {
+    const id = getPaperId(paper);
+    if (id && !papers.has(id)) papers.set(id, paper);
+  });
   return Array.from(papers.values());
 }
 

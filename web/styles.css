@@ -67,6 +67,17 @@
   --fs-2xl: 2rem;     /* 32 */
   --lh-base: 1.47;
 
+  /* ---- 品牌渐变 / 光晕 / 聚焦环（美化令牌）---- */
+  --brand-gradient: linear-gradient(135deg, var(--primary), #16b98a 85%);
+  --brand-gradient-soft: linear-gradient(135deg, var(--primary-soft), color-mix(in srgb, #16b98a 22%, transparent));
+  --ring: 0 0 0 3px var(--primary-soft);
+  --ring-strong: 0 0 0 3px var(--primary-soft-strong);
+  --body-glow-1: radial-gradient(42rem 30rem at 12% -6%, rgba(79, 110, 247, 0.10), transparent 60%);
+  --body-glow-2: radial-gradient(36rem 26rem at 108% 4%, rgba(22, 185, 138, 0.10), transparent 60%);
+  --card-hover-lift: translateY(-2px);
+  --card-hover-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+  --card-enter-duration: 360ms;
+
   /* Legacy aliases (kept for any older references). */
   --accent: var(--primary);
   font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
@@ -81,9 +92,12 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
+    var(--body-glow-1),
+    var(--body-glow-2),
     linear-gradient(135deg, var(--bg-grad-1), transparent 30%),
     linear-gradient(315deg, var(--bg-grad-2), transparent 26%),
     var(--bg);
+  background-attachment: local, local, fixed, fixed, fixed;
 }
 
 button,
@@ -147,11 +161,17 @@ button {
   height: 40px;
   border-radius: var(--radius-md);
   color: #fff;
-  background: linear-gradient(135deg, var(--primary), var(--teal));
+  background: var(--brand-gradient);
   font-weight: 800;
   font-size: 15px;
   letter-spacing: 0.02em;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 35%, transparent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.brand:hover .brand-mark {
+  transform: rotate(-4deg) scale(1.04);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 50%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .brand strong,
@@ -179,6 +199,29 @@ button {
 }
 .empty-block .secondary {
   margin-top: 12px;
+}
+
+/* 空态：柔和图标 + 更精致的占位（不再是干巴巴一行字）。 */
+.empty {
+  position: relative;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.empty::before {
+  content: "🔭";
+  display: block;
+  font-size: 30px;
+  line-height: 1;
+  margin-bottom: 10px;
+  opacity: 0.75;
+  filter: saturate(0.7);
+}
+
+html.theme-dark .empty::before {
+  opacity: 0.85;
 }
 
 .nav-list {
@@ -387,11 +430,15 @@ textarea:focus {
 .primary {
   color: #fff;
   background: var(--primary);
-  box-shadow: var(--shadow-xs);
+  background-image: var(--brand-gradient);
+  background-size: 100% 100%;
+  box-shadow: var(--shadow-xs), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--primary-hover);
+  background-color: var(--primary-hover);
+  background-image: var(--brand-gradient);
+  filter: brightness(1.04);
 }
 
 .primary:active:not(:disabled) {
@@ -401,6 +448,20 @@ textarea:focus {
 .primary:disabled {
   cursor: not-allowed;
   background: color-mix(in srgb, var(--primary) 50%, transparent);
+  filter: none;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.danger-secondary:focus-visible,
+.compact-action:focus-visible,
+.nav-item:focus-visible,
+.tab:focus-visible,
+.card-fold-toggle:focus-visible,
+.metric-button:focus-visible,
+.compact-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring) !important;
 }
 
 .secondary {
@@ -440,10 +501,10 @@ textarea:focus {
 .alert {
   margin-bottom: 18px;
   padding: 12px 14px;
-  border: 1px solid #e8c07d;
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
   border-radius: var(--radius);
-  background: #fff8e8;
-  color: #644000;
+  background: var(--amber-weak);
+  color: var(--amber);
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -454,7 +515,7 @@ textarea:focus {
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: #8a6d3b;
+  color: var(--amber);
   font-size: 18px;
   line-height: 1;
   padding: 0 2px;
@@ -463,8 +524,8 @@ textarea:focus {
 }
 
 .alert-dismiss:hover {
-  background: rgba(138, 109, 59, 0.15);
-  color: #644000;
+  background: color-mix(in srgb, var(--amber) 15%, transparent);
+  color: var(--amber);
 }
 
 /* Transient operation feedback, fixed so page re-renders never wipe it. */
@@ -476,11 +537,11 @@ textarea:focus {
   z-index: 1000;
   max-width: 80vw;
   padding: 10px 14px;
-  border: 1px solid #c8d8d0;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
   border-radius: var(--radius);
-  background: #f2fbf5;
-  color: #1f5c3d;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  background: var(--green-weak);
+  color: var(--green);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -490,7 +551,7 @@ textarea:focus {
 .toast .alert-dismiss {
   background: transparent;
   border: none;
-  color: #2e7d5b;
+  color: var(--green);
   font-size: 16px;
   line-height: 1;
   padding: 0 2px;
@@ -575,13 +636,64 @@ textarea:focus {
 .relation-card:hover,
 .candidate-row:hover,
 .candidate-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--line-strong);
+  box-shadow: var(--card-hover-shadow);
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--line));
+  transform: var(--card-hover-lift);
+}
+
+/* 卡片进入动画：淡入 + 轻微上移，视觉更精致。大量卡片同时渲染时
+   stagger 由各视图的父容器控制（见 .paper-list/.library-grid 等）。 */
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.paper-list .paper-card,
+.library-grid > *,
+.topic-grid > *,
+.settings-grid > *,
+.relation-grid-inner > *,
+.compact-list > *,
+.job-table > *,
+.pipeline-run-card,
+.workflow-catalog > *,
+.workflow-runs > * {
+  animation: cardIn var(--card-enter-duration) ease both;
+}
+
+/* 尊重减弱动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .metric {
   padding: 18px 16px;
   border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 指标卡顶部品牌渐变细条 + 内层柔光，增强"实时数据"的质感。 */
+.metric::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--brand-gradient);
+  opacity: 0.7;
 }
 
 .metric-button {
@@ -597,7 +709,7 @@ textarea:focus {
   border-color: var(--primary);
   background: var(--primary-soft);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--card-hover-shadow);
 }
 
 .metric-button small {
@@ -614,6 +726,14 @@ textarea:focus {
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/** 暗色下渐变文字同样清晰 */
+html.theme-dark .metric strong {
+  -webkit-text-fill-color: transparent;
 }
 
 .metric-details {
@@ -850,7 +970,7 @@ textarea:focus {
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   font-family: inherit;
   font-size: 13px;
@@ -913,7 +1033,7 @@ textarea:focus {
 .state.running,
 .state.queued,
 .state.processing {
-  background: #eef5ff;
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
   color: var(--blue);
 }
 
@@ -921,13 +1041,13 @@ textarea:focus {
 .state.error,
 .state.retryable_failed,
 .state.terminal_failed {
-  background: #fff0ee;
+  background: var(--red-weak);
   color: var(--red);
 }
 
 .state.cancelled {
-  background: #f3f4f6;
-  color: #57615c;
+  background: var(--surface-2);
+  color: var(--muted);
 }
 
 .toolbar {
@@ -977,8 +1097,9 @@ textarea:focus {
 
 .tab.active {
   color: #fff;
-  border-color: var(--primary);
-  background: var(--primary);
+  border-color: transparent;
+  background: var(--brand-gradient);
+  box-shadow: var(--shadow-xs), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .document-content {
@@ -993,6 +1114,8 @@ textarea:focus {
   min-height: 68vh;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
 }
 
 .markdown-body,
@@ -1000,6 +1123,33 @@ textarea:focus {
 .evidence-list {
   white-space: normal;
   line-height: 1.68;
+}
+
+/* 正文行宽适中、段落间距舒适（阅读台/草稿均适用）。 */
+.markdown-body {
+  max-width: 72ch;
+}
+
+/* 简易表格样式（研读报告/草稿若出现 markdown 表格也能正常阅读）。 */
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.92em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.markdown-body th {
+  background: var(--surface-2);
+  font-weight: 700;
+  color: var(--ink);
+}
+.markdown-body tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
 }
 
 /* Rendered Markdown typography (safe, escaped output). */
@@ -1127,19 +1277,20 @@ textarea:focus {
   border-radius: var(--radius);
   padding: 10px;
   text-align: left;
-  background: #fff;
+  background: var(--panel);
 }
 
 .compact-button.active {
-  border-color: var(--green);
-  background: var(--green-weak);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .tech-card {
   border-left: 4px solid var(--teal);
   padding: 10px 10px 10px 12px;
   border-radius: var(--radius);
-  background: #f8fbfa;
+  background: var(--surface-2);
 }
 
 .compact-action {
@@ -1162,9 +1313,9 @@ textarea:focus {
   padding: 4px 10px;
 }
 .jobs-poll-badge.has-pending {
-  color: #0f5c34;
-  background: #e8f5ec;
-  border-color: #bfe0cc;
+  color: var(--green);
+  background: var(--green-weak);
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
   animation: jobsPollPulse 1.6s ease-in-out infinite;
 }
 @keyframes jobsPollPulse {
@@ -1198,7 +1349,7 @@ textarea:focus {
   border-radius: var(--radius);
   padding: 14px;
   margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.93);
+  background: color-mix(in srgb, var(--panel) 93%, transparent);
   box-shadow: var(--shadow);
   display: grid;
   gap: 10px;
@@ -1226,7 +1377,7 @@ textarea:focus {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #f5f7f6;
+  background: var(--surface-2);
 }
 .pipeline-step strong {
   font-size: 13px;
@@ -1237,22 +1388,22 @@ textarea:focus {
 }
 .pipeline-step.running {
   border-color: var(--blue);
-  background: #eef5ff;
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
 }
 .pipeline-step.running .gate-icon {
   background: var(--blue);
   animation: jobsPollPulse 1.4s ease-in-out infinite;
 }
 .pipeline-step.succeeded {
-  border-color: #bfe0cc;
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
   background: var(--green-weak);
 }
 .pipeline-step.succeeded .gate-icon {
   background: var(--green);
 }
 .pipeline-step.failed {
-  border-color: #f1b4ad;
-  background: #fff0ee;
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  background: var(--red-weak);
 }
 .pipeline-step.failed .gate-icon {
   background: var(--red);
@@ -1262,8 +1413,9 @@ textarea:focus {
   gap: 4px;
   padding: 10px;
   border-left: 3px solid var(--amber);
-  background: #fff8e8;
+  background: var(--amber-weak);
   border-radius: var(--radius);
+  color: var(--amber);
 }
 .pipeline-error-line {
   margin: 0;
@@ -1321,7 +1473,7 @@ textarea:focus {
 }
 
 .confidence-pill {
-  background: #eef5ff;
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
   color: var(--blue);
   font-weight: 600;
 }
@@ -1361,10 +1513,10 @@ textarea:focus {
 .compliance-note {
   margin-bottom: 12px;
   padding: 12px;
-  border: 1px solid #dfc48b;
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
   border-radius: var(--radius);
-  background: #fff7df;
-  color: #5c4105;
+  background: var(--amber-weak);
+  color: var(--amber);
   line-height: 1.55;
 }
 
@@ -1388,7 +1540,7 @@ textarea:focus {
   height: 22px;
   border-radius: 50%;
   color: #fff;
-  background: #94a39a;
+  background: var(--muted);
   font-size: 12px;
 }
 
@@ -1452,7 +1604,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 10px;
-  background: #f8fbfa;
+  background: var(--surface-2);
 }
 
 .workflow-node .stage-order {
@@ -1462,7 +1614,7 @@ textarea:focus {
 .workflow-node.disabled {
   border-style: dashed;
   opacity: 0.65;
-  background: #f5f5f4;
+  background: var(--surface-2);
 }
 
 .workflow-arrow {
@@ -1484,7 +1636,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 12px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .workflow-step-counts {
@@ -1501,7 +1653,7 @@ textarea:focus {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--panel);
 }
 
 .stage-order {
@@ -1602,16 +1754,37 @@ textarea:focus {
   padding: 20px;
   border: 1px dashed var(--line);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.64);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
 
 .error {
-  border-color: #f1b4ad;
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
   color: var(--red);
 }
 
 .loading {
   color: var(--blue);
+  position: relative;
+}
+
+/* 加载态左边呼吸指示条 */
+.loading::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid color-mix(in srgb, var(--blue) 30%, transparent);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spinner 0.8s linear infinite;
+}
+
+@keyframes spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 1180px) {
@@ -1890,7 +2063,7 @@ textarea:focus {
   border-left: 3px solid var(--teal);
   padding: 8px 12px;
   margin: 4px 0;
-  background: #f8fbfa;
+  background: var(--surface-2);
   border-radius: 4px;
 }
 
@@ -1913,7 +2086,7 @@ textarea:focus {
   margin-top: 16px;
   border: 2px dashed var(--line);
   border-radius: var(--radius);
-  background: rgba(255,255,255,0.6);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
 
 .add-topic-form h3 {
@@ -2057,7 +2230,7 @@ textarea:focus {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(255,255,255,0.5);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
@@ -2272,9 +2445,9 @@ textarea:focus {
 
 /* ---- Token usage ---- */
 .token-pill {
-  background: #eef5ff;
-  color: #1d4ed8;
-  border: 1px solid #c9dbff;
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, transparent);
 }
 .job-token {
   font-size: 11px;
@@ -2301,8 +2474,8 @@ textarea:focus {
   padding: 1px 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: #f7f8fa;
-  color: #8a93a5;
+  background: var(--surface-2);
+  color: var(--muted);
   white-space: nowrap;
 }
 .stage-tag.done {
@@ -2311,7 +2484,7 @@ textarea:focus {
   color: var(--green, #16744b);
 }
 .stage-tag.todo {
-  color: #8a93a5;
+  color: var(--muted);
 }
 
 /* ---- 显示设置：字号缩放提示 ---- */
@@ -2365,6 +2538,7 @@ html.font-xlarge  { zoom: 1.25; }
 .reader-paper-summary {
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--surface, #fff) 92%, var(--bg, #f7f4ec));
 }
 .reader-paper-summary-head strong {
@@ -2387,7 +2561,15 @@ html.font-xlarge  { zoom: 1.25; }
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-2);
+  background:
+    linear-gradient(90deg, var(--primary-soft), transparent 55%),
+    var(--surface-2);
+}
+
+.html.theme-dark .pdf-viewer-bar {
+  background:
+    linear-gradient(90deg, var(--primary-soft), transparent 55%),
+    var(--surface-2);
 }
 
 .pdf-viewer-bar .meta {
@@ -2414,6 +2596,36 @@ html.font-xlarge  { zoom: 1.25; }
 }
 .pipeline-run-card[data-expanded="1"] .pipeline-run-expand-caret {
   color: var(--accent, #2f6fed);
+}
+
+/* ---- 滚动条：细腻、跟随主题 ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 42%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+/* ---- 折叠过渡动画（展开/收起平滑，不突兀）---- */
+.card-collapsible .paper-card-body,
+.card-collapsible .daily-topic-papers {
+  transition: opacity 0.16s ease;
 }
 
 /* ---- 夜间模式（.theme-dark 覆盖 CSS 变量）---- */
@@ -2467,9 +2679,17 @@ html.theme-dark {
 }
 html.theme-dark body {
   background:
+    var(--body-glow-1),
+    var(--body-glow-2),
     linear-gradient(135deg, var(--bg-grad-1), transparent 30%),
     linear-gradient(315deg, var(--bg-grad-2), transparent 26%),
     var(--bg);
+  background-attachment: local, local, fixed, fixed, fixed;
+}
+html.theme-dark {
+  --body-glow-1: radial-gradient(42rem 30rem at 12% -6%, rgba(110, 139, 255, 0.12), transparent 60%);
+  --body-glow-2: radial-gradient(36rem 26rem at 108% 4%, rgba(34, 197, 155, 0.12), transparent 60%);
+  --brand-gradient: linear-gradient(135deg, #6e8bff, #34d399 85%);
 }
 html.theme-dark a {
   color: var(--blue);

@@ -796,3 +796,57 @@ def test_pdf_tab_reads_inline_and_downloads_only_on_explicit_button() -> None:
     assert "data-fetch-pdf-on-server" in app
     assert "获取 PDF 以便在线阅读" in app
     assert "不会下载到你本地" in app
+
+
+def test_reader_falls_back_to_full_library_when_today_empty() -> None:
+    """阅读台必须能从全库（allPapers）兜底，避免今日列表为空时直链论文空白。
+    覆盖 P0-A：URL 直链一篇不属于今日列表的论文时目录与文档区仍可渲染。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    # knownPapers 合并今日 + 全库 + 笔记本，保证 selectedPaper() 能在全库找到。
+    assert "state.allPapers" in app
+    assert "...state.allPapers, ...state.notebookItems" in app
+    # readerDirectoryPapers 在 filteredPapers 为空时把当前选中论文收入目录。
+    assert "papers.unshift(currentPaper)" in app
+    # renderReader 目录空但有选中论文时仍渲染文档区。
+    assert "selectedPaperCandidate" in app
+    # 全库加载完成后重渲染阅读台/专利候选，解决初始时序空态。
+    assert 'if (state.activeView === "reader") renderReader();' in app
+    assert 'if (state.activeView === "patents") renderPatentWorkspace();' in app
+
+
+def test_patent_picker_uses_full_library_and_limits_rows() -> None:
+    """专利候选选择器必须从全库选论文（不再只盯着空的今日列表），
+    并对大批量列表做限制避免渲染卡顿。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "knownPapers()" in app
+    assert "candidate-picker-limit" in app
+    assert "仅展示前 120 篇供选择" in app
+    assert 'state.allPapersLoading)' in app
+
+
+def test_search_uses_debounce_and_escape_fix() -> None:
+    """全局搜索输入必须防抖渲染（大列表防卡顿），且联网失败/加载
+    不再被外层 html`` 转义（错误框应真实显示）。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "debounceRenderSearch" in app
+    assert "addEventListener(\"input\", debounceRenderSearch)" in app
+    # renderSearchResults 的错误/加载块不再被转义
+    assert "loadingBlock(\"正在联网检索论文...\")" in app
+    assert "errorBlock(`联网检索失败：${state.onlineError}`)" in app
+
+
+def test_dark_mode_uses_semantic_surfaces_not_literal_whites() -> None:
+    """暗色模式不得残留大量字面浅色背景导致白斑：核心组件应使用语义变量/
+    theme-dark 覆盖。抽查若干关键组件不再出现 #fff / #f2fbf5 等字面色。"""
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert "var(--amber-weak)" in styles          # .alert / .compliance-note
+    assert "var(--green-weak)" in styles           # .toast
+    assert "var(--red-weak)" in styles             # .state.failed / pipeline-step.failed
+    assert "var(--surface-2)" in styles            # .tech-card / .stage-tag
+    assert "var(--brand-gradient)" in styles
+    assert "prefers-reduced-motion" in styles
+    assert "html.theme-dark body" in styles
