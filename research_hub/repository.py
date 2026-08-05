@@ -758,7 +758,15 @@ class Repository:
 
     def retry_job(self, job_id: str, request: JobRetryRequest) -> Job:
         job = self.get_job(job_id)
-        if job.status not in {"retryable_failed", "terminal_failed", "cancelled"}:
+        if job.status not in {
+            "retryable_failed",
+            "terminal_failed",
+            "cancelled",
+            # A discovery run may complete only partially (e.g. some topics
+            # failed while others succeeded). Operators still need to be able
+            # to re-trigger/re-run such a run, so treat it as retryable too.
+            "partial_succeeded",
+        }:
             raise ConflictError(f"Job {job_id} is {job.status} and cannot be retried")
         retry_note = {"retry_reason": request.reason, "retried_from": job.status}
         merged_request = {**job.request, "_retry": retry_note}

@@ -1365,9 +1365,14 @@ html.theme-dark .metric strong {
   font-size: 15px;
 }
 .pipeline-flow {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pipeline-flow .pipeline-step {
+  flex: 1 1 130px;
+  min-width: 140px;
 }
 .pipeline-step {
   display: grid;
@@ -1408,6 +1413,29 @@ html.theme-dark .metric strong {
 .pipeline-step.failed .gate-icon {
   background: var(--red);
 }
+/* 并行分支标注（研读 ⟂ / 翻译 ∥）：紧贴步骤标题右侧，标示该步与相邻分支并行。 */
+.pipeline-branch-mark {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 6px;
+  vertical-align: middle;
+}
+/* 流水线步骤之间的箭头：默认「→」，解析后为分叉「⇉」提示并行展开。 */
+.pipeline-step-arrow {
+  align-self: center;
+  color: var(--line-strong, var(--line));
+  font-size: 20px;
+  font-weight: 800;
+}
+.pipeline-step-arrow.branch-split {
+  color: var(--blue);
+}
 .pipeline-errors {
   display: grid;
   gap: 4px;
@@ -1430,7 +1458,16 @@ html.theme-dark .metric strong {
 }
 @media (max-width: 820px) {
   .pipeline-flow {
-    grid-template-columns: 1fr 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pipeline-flow .pipeline-step {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .pipeline-step-arrow {
+    transform: rotate(90deg);
+    align-self: center;
   }
 }
 
@@ -1622,6 +1659,26 @@ html.theme-dark .metric strong {
   color: var(--green);
   font-size: 22px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+/* 并行分叉 / 多路汇聚的箭头标注：让工作流从外部一眼看出哪一步会并行拆开、
+   哪一步会汇聚合并，体现真实的「串行推进 + 并行分叉」顺序。 */
+.workflow-arrow.workflow-branch {
+  color: var(--blue);
+  font-size: 15px;
+  background: color-mix(in srgb, var(--blue) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.workflow-arrow.workflow-merge {
+  color: var(--purple, #8b5cf6);
+  font-size: 15px;
+  background: color-mix(in srgb, var(--purple, #8b5cf6) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--purple, #8b5cf6) 35%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 .workflow-schedule {

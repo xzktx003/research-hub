@@ -26,6 +26,7 @@ WORKFLOW_DEFINITIONS: tuple[dict[str, Any], ...] = (
             ["parse", "analyze"],
             ["parse", "translate"],
             ["analyze", "relate"],
+            ["translate", "relate"],
         ],
     },
     {

@@ -147,7 +147,10 @@ const endpoints = {
   papers: [`/papers?date=${encodeURIComponent(today)}`, "/papers"],
   notebook: ["/papers?selected=true"],
   topics: ["/topics"],
-  jobs: ["/jobs"],
+  // Pull more jobs so earlier discovery/download jobs (created before a burst
+  // of later translate jobs) still show up in 任务中心 and can be paused or
+  // re-triggered instead of being silently evicted by the 300-row default.
+  jobs: ["/jobs?limit=1000"],
   candidates: ["/invention-candidates"],
   drafts: ["/patent-drafts"],
   digest: [`/daily-digests/${encodeURIComponent(today)}`],
@@ -234,6 +237,9 @@ function bindControls() {
   });
   document.getElementById("runDiscoveryButton").addEventListener("click", (event) => {
     withButtonLoading(event.currentTarget, runDiscovery);
+  });
+  document.getElementById("jobRunDiscoveryButton")?.addEventListener("click", (event) => {
+    withButtonLoading(event.currentTarget, runDiscoveryFromJobs);
   });
   document.getElementById("helpButton").addEventListener("click", openHelp);
   document.getElementById("helpCloseButton").addEventListener("click", closeHelp);
@@ -351,7 +357,7 @@ async function pollJobsOnce() {
   renderJobsPollStatus();
   try {
     const [jobsData, workflowData] = await Promise.all([
-      apiJson("/jobs"),
+      apiJson("/jobs?limit=1000"),
       apiJson("/workflows").catch(() => null),
     ]);
     const items = normalizeList(jobsData, ["items", "jobs", "results", "data"]);
@@ -2794,15 +2800,25 @@ function renderNotebookView() {
     : emptyBlock("笔记本中的论文尚未生成研读报告。在阅读台中打开论文即可触发后端分析。");
 }
 
-// 用当前任务数据填充「类型」筛选下拉的选项（保留用户已选值）。
+// 任务中心的固定类型目录：即使当前加载的任务里没有某种类型（例如早期创建的
+// 发现任务被后续翻译任务刷出前 300 行），下拉里也始终能选到，避免"筛选入口
+// 里都是全部类型"的观感。顺序即流水线顺序：发现→下载→解析→研读→翻译→关系。
+const JOB_KIND_CATALOG = ["discover", "download", "parse", "analyze", "translate", "relate"];
+
+// 用任务数据 + 固定类型目录填充「类型」筛选下拉的选项（保留用户已选值）。
 function populateJobKindFilter(jobs) {
   const select = document.getElementById("jobKindFilter");
   if (!select) return;
-  const kinds = [...new Set(jobs.map((job) => job.kind).filter(Boolean))].sort();
+  const known = new Set(JOB_KIND_CATALOG);
+  const kinds = [...new Set([
+    ...JOB_KIND_CATALOG,
+    ...jobs.map((job) => job.kind).filter(Boolean),
+  ])];
   const current = select.value;
   const options = ['<option value="">全部类型</option>'];
   kinds.forEach((kind) => {
-    options.push(`<option value="${escapeHtml(kind)}">${escapeHtml(jobKindLabel(kind) || kind)}</option>`);
+    const label = jobKindLabel(kind) || kind;
+    options.push(`<option value="${escapeHtml(kind)}">${escapeHtml(label)}${known.has(kind) ? "" : "（其他）"}</option>`);
   });
   select.innerHTML = options.join("");
   if (current && kinds.includes(current)) select.value = current;
@@ -2906,15 +2922,18 @@ function toggleRunExpanded(runId) {
 
 // ---- Pipeline run timeline -------------------------------------------
 // Show the mid-flight progress of each discovery run (发现 → 下载 → 解析 →
-// 研读 → 翻译) so the user can see what the worker is actually doing instead
-// of only a flat list of jobs. Data comes from the run snapshots returned by
-// /workflows (state.workflows.runs).
+// 研读/翻译 → 关系) so the user can see what the worker is actually doing
+// instead of only a flat list of jobs. Data comes from the run snapshots
+// returned by /workflows (state.workflows.runs). The order mirrors the
+// backend WORKFLOW_DEFINITIONS: parse fans out into parallel branches
+// (analyze ∥ translate), then everything converges into relate.
 const PIPELINE_STEPS = [
   ["discover", "论文发现"],
   ["download", "PDF 下载"],
   ["parse", "文档解析"],
   ["analyze", "LLM 研读"],
   ["translate", "中文翻译"],
+  ["relate", "关系与日报"],
 ];
 
 function renderPipelineRuns() {
@@ -2931,7 +2950,10 @@ function renderPipelineRuns() {
     const started = String(run.created_at || "").slice(0, 19).replace("T", " ");
     const seen = run.input_counts?.papers_seen ?? "–";
     const persisted = run.output_counts?.papers_persisted ?? 0;
-    const flow = PIPELINE_STEPS.map(([kind, label]) => {
+    // 并行分支指示：文档解析完成后并行进入「研读 ↔ 翻译」两路，最终汇聚到
+    // 「关系与日报」。用字母标签标注分支，让串行/并行关系一目了然。
+    const branchSet = new Set(["analyze", "translate"]);
+    const flow = PIPELINE_STEPS.map(([kind, label], stepIndex) => {
       const counts = steps[kind] || {};
       const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
       const failed = (counts.retryable_failed || 0) + (counts.terminal_failed || 0) + (counts.failed || 0);
@@ -2947,12 +2969,19 @@ function renderPipelineRuns() {
       else if (failed) { stateClass = "failed"; badge = progress ? `${progress} 完成·含失败` : `${failed} 个失败`; }
       else if (succeeded) { stateClass = "succeeded"; badge = progress ? `${progress} 完成` : total ? `${succeeded} 个完成` : "0 个"; }
       const icon = stateClass === "running" ? "↻" : stateClass === "failed" ? "!" : stateClass === "succeeded" ? "✓" : "·";
+      const isBranch = branchSet.has(kind);
+      // 在并行分支入口（parse 之后）与汇聚点（relate 之前）插入分支标注。
+      const branchNote = isBranch
+        ? `<span class="pipeline-branch-mark" title="与${kind === "analyze" ? "中文翻译" : "LLM 研读"}并行">${kind === "analyze" ? "⟂" : "∥"}</span>`
+        : "";
       return html`
-        <div class="pipeline-step ${stateClass}">
+        <div class="pipeline-step ${stateClass} ${isBranch ? "branch" : ""}">
           <span class="gate-icon">${icon}</span>
-          <div><strong>${label}</strong><p class="meta" title="${progressTip}">${badge}</p></div>
+          <div><strong>${label}${raw(branchNote)}</strong><p class="meta" title="${progressTip}">${badge}</p></div>
         </div>
-      `;
+      ` + (stepIndex === PIPELINE_STEPS.length - 1 ? "" : `
+        <span class="pipeline-step-arrow ${kind === "parse" ? "branch-split" : ""}" aria-hidden="true">${kind === "parse" ? "⇉" : "→"}</span>
+      `);
     }).join("");
     const errors = summarizeRunErrors(run);
     const jobs = run.jobs || [];
@@ -3718,14 +3747,7 @@ function renderWorkflows() {
         <button class="card-fold-toggle" type="button" data-fold="${wfKey}" title="${wfFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${wfFolded ? "展开" : "收起"}</button>
       </div>
       <div class="workflow-dag">
-        ${raw((workflow.nodes || []).map((node, index) => html`
-          <div class="workflow-node ${node.enabled ? "enabled" : "disabled"}">
-            <span class="stage-order">${index + 1}</span>
-            <strong>${node.label}</strong>
-            <span class="meta">${node.optional ? "可选 · " : ""}${workflowNodeSummary(node)}</span>
-          </div>
-          ${raw(index < workflow.nodes.length - 1 ? '<span class="workflow-arrow" aria-hidden="true">→</span>' : "")}
-        `).join(""))}
+        ${raw(renderWorkflowDag(workflow))}
       </div>
       ${raw(workflow.schedule ? html`<p class="meta workflow-schedule">每日 ${workflow.schedule.daily_hour}:00 · ${workflow.schedule.timezone} · 回看 ${workflow.schedule.lookback_days} 天 · 最多 ${workflow.schedule.max_results} 篇/主题</p>` : "")}
       <div class="card-fold-bar">
@@ -3764,6 +3786,89 @@ function renderWorkflows() {
   ` : emptyBlock("尚无工作流运行；触发论文发现后会自动创建。 ");
   bindCardFoldToggles(runs);
   bindCardFoldBatch(runs);
+}
+
+// 用 workflow.edges 渲染真正有方向的 DAG 卡片：顺序依赖用「→」，并行分叉用
+// 「⇉ 并行」、多路汇聚用「⇉ 汇聚」，让"按顺序推进 + 并行分叉"的流水线结构
+// 一目了然；若后端没有下发 edges，则退回按 nodes 数组顺序渲染。
+function renderWorkflowDag(workflow) {
+  const nodes = workflow.nodes || [];
+  if (!nodes.length) return "";
+  const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+  if (!edges.length) {
+    return nodes.map((node, index) => html`
+      <div class="workflow-node ${node.enabled ? "enabled" : "disabled"}">
+        <span class="stage-order">${index + 1}</span>
+        <strong>${node.label}</strong>
+        <span class="meta">${node.optional ? "可选 · " : ""}${workflowNodeSummary(node)}</span>
+      </div>
+      ${index < nodes.length - 1 ? '<span class="workflow-arrow" aria-hidden="true">→</span>' : ""}
+    `).join("");
+  }
+  const outDegree = {};
+  const inDegree = {};
+  const byId = {};
+  const nodeIndex = {};
+  nodes.forEach((node, index) => {
+    byId[node.id] = node;
+    nodeIndex[node.id] = index;
+    outDegree[node.id] = 0;
+    inDegree[node.id] = 0;
+  });
+  const outgoing = {};
+  const incoming = {};
+  nodes.forEach((node) => {
+    outgoing[node.id] = [];
+    incoming[node.id] = [];
+  });
+  edges.forEach(([from, to]) => {
+    if (outDegree[from] !== undefined) outDegree[from] += 1;
+    if (inDegree[to] !== undefined) inDegree[to] += 1;
+    if (outgoing[from]) outgoing[from].push(to);
+    if (incoming[to]) incoming[to].push(from);
+  });
+  // 并行兄弟集合：从同一个分叉父节点出发的节点。
+  const siblingOf = (nodeId) => {
+    const parents = incoming[nodeId] || [];
+    const result = new Set();
+    parents.forEach((parent) => {
+      if (outDegree[parent] > 1) {
+        (outgoing[parent] || []).forEach((sib) => result.add(sib));
+      }
+    });
+    return result;
+  };
+  return nodes.map((node, index) => {
+    const parts = [html`
+      <div class="workflow-node ${node.enabled ? "enabled" : "disabled"}">
+        <span class="stage-order">${index + 1}</span>
+        <strong>${node.label}</strong>
+        <span class="meta">${node.optional ? "可选 · " : ""}${workflowNodeSummary(node)}</span>
+      </div>
+    `];
+    const nexts = outgoing[node.id] || [];
+    if (index === nodes.length - 1 || nexts.length === 0) return parts.join("");
+    if (nexts.length > 1) {
+      // 一对多 → 并行分叉
+      parts.push('<span class="workflow-arrow workflow-branch" aria-hidden="true">⇉ 并行</span>');
+      return parts.join("");
+    }
+    const reached = nexts[0];
+    // 并行分支之间：当前节点与后续兄弟节点是并行推进的（研读 ∥ 翻译）。
+    const siblings = siblingOf(node.id);
+    const hasSiblingAfter = [...siblings].some((sib) => nodeIndex[sib] > index);
+    if (siblings.size > 0 && hasSiblingAfter) {
+      parts.push('<span class="workflow-arrow workflow-branch" aria-hidden="true">∥ 并行</span>');
+      return parts.join("");
+    }
+    // 多个分支汇聚到同一节点（最后一条平行线进入 relate 前）。
+    if ((incoming[reached] || []).length > 1) {
+      parts.push('<span class="workflow-arrow workflow-merge" aria-hidden="true">⇊ 汇聚</span>');
+      return parts.join("");
+    }
+    parts.push('<span class="workflow-arrow" aria-hidden="true">→</span>');
+    return parts.join("");
+  }).join("");
 }
 
 function workflowNodeSummary(node) {
@@ -4040,6 +4145,42 @@ async function runDiscovery() {
     await loadAll();
     // Jump to 任务中心 so the user sees the job progress live.
     switchView("jobs", true);
+  } catch (error) {
+    showAlert(`发现任务提交失败：${error.message}`);
+  }
+}
+
+// 与 runDiscovery 相同的触发逻辑，但专用于任务中心：提交后刷新任务列表并停
+// 留在当前页（任务中心），让用户立即看到新发现任务的进展，而不是跳走。
+async function runDiscoveryFromJobs() {
+  const selectedDate = document.getElementById("dateFilter").value || today;
+  const lookback = Math.max(1, Number(state.runtimeConfig?.schedule?.lookback_days) || 7);
+  const startDate = addDays(selectedDate, -(lookback - 1));
+  const windowStart = `${startDate}T00:00:00`;
+  const windowEnd = `${selectedDate}T23:59:59`;
+  const enabledTopics = state.topics.filter((topic) => topic.enabled !== false);
+  const topicIds = enabledTopics.slice(0, 6).map((topic) => topic.id);
+  try {
+    if (enabledTopics.length > 6) {
+      showAlert(`注意：本次发现仅覆盖前 6 个启用主题（共 ${enabledTopics.length} 个），其余主题请用「定向发现」单独跑。`);
+    } else {
+      showAlert(`正在提交发现任务（回溯 ${lookback} 天）...`);
+    }
+    await apiJson("/discovery-runs", {
+      method: "POST",
+      headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}` },
+      body: JSON.stringify({
+        source: "multi",
+        window_start: windowStart,
+        window_end: windowEnd,
+        topics: topicIds,
+        max_results: 20,
+        metadata: { trigger: "web", auto_process: true, hit_date: selectedDate, lookback_days: lookback },
+      }),
+    });
+    showAlert("发现任务已提交，任务中心会显示真实执行状态。");
+    await loadAll();
+    pollJobsOnce();
   } catch (error) {
     showAlert(`发现任务提交失败：${error.message}`);
   }
@@ -5021,7 +5162,7 @@ function priorArtJob(candidateId) {
 }
 
 function canRetryJob(job) {
-  return ["retryable_failed", "terminal_failed", "cancelled", "failed", "error"].includes(String(job.status || "").toLowerCase());
+  return ["retryable_failed", "terminal_failed", "cancelled", "failed", "error", "partial_succeeded"].includes(String(job.status || "").toLowerCase());
 }
 
 function canCancelJob(job) {
@@ -5036,6 +5177,7 @@ function jobStatusLabel(status) {
     succeeded: "已成功",
     success: "已成功",
     completed: "已完成",
+    partial_succeeded: "部分成功",
     retryable_failed: "可重试失败",
     terminal_failed: "终止失败",
     failed: "失败",

@@ -850,3 +850,74 @@ def test_dark_mode_uses_semantic_surfaces_not_literal_whites() -> None:
     assert "var(--brand-gradient)" in styles
     assert "prefers-reduced-motion" in styles
     assert "html.theme-dark body" in styles
+
+
+def test_jobs_kind_filter_offers_full_catalog_including_discover_and_relate() -> None:
+    """任务中心的类型筛选必须始终提供完整流水线类型（发现/下载/解析/研读/
+    翻译/关系），而不是只列出当前任务数据里存在的类型；否则早期创建的发现任
+    务被后续任务刷走后，「发现」选项消失，用户会误以为"筛选全是全部类型"。
+    也要求任务中心直接提供「触发发现」入口，方便暂停/重新触发发现任务。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert "JOB_KIND_CATALOG" in app
+    assert '"discover", "download", "parse", "analyze", "translate", "relate"' in app
+    assert 'jobKindLabel(kind) || kind' in app
+    assert 'jobRunDiscoveryButton' in index
+    assert 'id="jobRunDiscoveryButton"' in app or "jobRunDiscoveryButton" in app
+
+
+def test_jobs_pipeline_steps_include_relate_in_order() -> None:
+    """任务中心顶部流水线必须与后端工作流定义一致的顺序：发现→下载→解析→
+    研读/翻译（并行）→关系与日报，不得漏掉最后的关系步骤，也不得把翻译排在
+    研读之前造成"工作流不按顺序"的观感。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert '"relate", "关系与日报"' in app
+    assert '"analyze", "LLM 研读"' in app
+    assert '"translate", "中文翻译"' in app
+    # 并行分支标记：研读⟂ / 翻译∥
+    assert 'pipeline-branch-mark' in app
+    assert 'branchSet' in app
+    assert 'pipeline-step-arrow' in app
+
+
+def test_discover_job_can_retry_partial_succeeded() -> None:
+    """发现任务（discover）在部分成功 / 可重试失败时必须在任务中心提供「重
+    试」（= 重新触发）按钮；后端 retry 也必须放行 partial_succeeded，否则用户
+    无法对已开启的发现任务做重新触发。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    repository = (PROJECT_ROOT / "research_hub" / "repository.py").read_text(encoding="utf-8")
+
+    assert '"partial_succeeded"' in app or "partial_succeeded" in app
+    assert 'canRetryJob' in app
+    assert "partial_succeeded" in repository
+    assert "cannot be retried" in repository
+
+
+def test_workflow_dag_renders_parallel_branch_and_merge() -> None:
+    """工作流卡片必须基于后端 edges 渲染有向 DAG，能体现并行分叉（⇉ 并行）与
+    多路汇聚（⇊ 汇聚），而不是只能顺序排一条线；让用户从可视化上一眼看出
+    「解析后研读与翻译并行、最后汇聚到关系」。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+
+    assert "renderWorkflowDag" in app
+    assert "workflow-branch" in app
+    assert "workflow-merge" in app
+    assert "⇉ 并行" in app
+    assert "⇊ 汇聚" in app
+    assert ".workflow-arrow.workflow-branch" in styles
+    assert ".workflow-arrow.workflow-merge" in styles
+
+
+def test_workflow_daily_pipeline_edges_connect_translate_to_relate() -> None:
+    """后端每日论文研读工作流必须包含 translate → relate 边，这样并行分叉
+    （解析→研读/翻译）最终能汇聚到「关系与日报」，可视化才不会出现翻译分支
+    悬空、顺序感缺失。"""
+    workflows = (PROJECT_ROOT / "research_hub" / "workflows.py").read_text(encoding="utf-8")
+
+    assert '["translate", "relate"]' in workflows
+    assert '["parse", "analyze"]' in workflows
+    assert '["parse", "translate"]' in workflows
+    assert '["analyze", "relate"]' in workflows
