@@ -224,6 +224,9 @@ function bindControls() {
   bindReaderNavButtons();
   document.getElementById("jobKindFilter")?.addEventListener("change", () => { if (state.activeView === "jobs") renderJobs(); });
   document.getElementById("jobStatusFilter")?.addEventListener("change", () => { if (state.activeView === "jobs") renderJobs(); });
+  document.getElementById("jobSearch")?.addEventListener("input", debounceRenderSearch);
+  document.getElementById("notebookClearButton")?.addEventListener("click", clearNotebook);
+  document.getElementById("notebookCopyDigestButton")?.addEventListener("click", copyNotebookDigest);
   document.getElementById("selectAllVisibleBtn")?.addEventListener("click", () => {
     const papers = filteredPapers();
     papers.forEach((paper) => state.batchSelected.add(getPaperId(paper)));
@@ -799,6 +802,11 @@ function readableDetail(detail) {
   }
   if (typeof detail === "object") return JSON.stringify(detail);
   return String(detail);
+}
+
+function userActionNonce() {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function analysisConfigPayload() {
@@ -2132,7 +2140,7 @@ function renderDocument(paper, workspace) {
       container.appendChild(actions);
       actions.querySelector("[data-copy-report]")?.addEventListener("click", () => {
         const text = reportText(report);
-        navigator.clipboard.writeText(text).then(() => {
+        writeClipboardText(text).then(() => {
           showAlert("研读报告已复制到剪贴板。");
         }).catch(() => {
           showAlert("复制失败，请手动选择文本复制。");
@@ -2822,16 +2830,20 @@ function renderNotebookView() {
   const listContainer = document.getElementById("notebookPaperList");
   const digestContainer = document.getElementById("notebookDigest");
   const countEl = document.getElementById("notebookCount");
+  const clearButton = document.getElementById("notebookClearButton");
+  const copyDigestButton = document.getElementById("notebookCopyDigestButton");
   if (!listContainer || !digestContainer) return;
 
   const notebookPaperIds = Array.from(state.notebookPapers);
   if (countEl) countEl.textContent = `${notebookPaperIds.length} 篇`;
+  if (clearButton) clearButton.disabled = notebookPaperIds.length === 0;
 
   const notebookPapers = state.notebookItems.filter((paper) => state.notebookPapers.has(getPaperId(paper)));
 
   if (!notebookPapers.length) {
     listContainer.innerHTML = emptyBlock("笔记本为空。在论文库或仪表盘中点击「加入笔记本」来收藏论文。");
     digestContainer.innerHTML = emptyBlock("添加论文到笔记本后，这里会汇总展示研读摘要。");
+    if (copyDigestButton) copyDigestButton.disabled = true;
     return;
   }
 
@@ -2934,6 +2946,8 @@ function renderNotebookView() {
     })
     .filter(({ workspace }) => workspace?.report || normalizeList(workspace?.technical_cards, ["items"]).length);
 
+  if (copyDigestButton) copyDigestButton.disabled = reports.length === 0;
+
   digestContainer.innerHTML = reports.length
     ? reports.map(({ paper, workspace }) => html`
       <div class="compact-item">
@@ -2942,6 +2956,95 @@ function renderNotebookView() {
       </div>
     `).join("")
     : emptyBlock("笔记本中的论文尚未生成研读报告。在阅读台中打开论文即可触发后端分析。");
+}
+
+function notebookDigestText() {
+  return state.notebookItems
+    .filter((paper) => state.notebookPapers.has(getPaperId(paper)))
+    .map((paper) => {
+      const workspace = state.workspaces.get(getPaperId(paper));
+      const report = workspace?.report || {};
+      const card = normalizeList(workspace?.technical_cards, ["items"])[0] || {};
+      const sections = [
+        `# ${paperTitle(paper)}`,
+        report.summary ? `总结：${report.summary}` : "",
+        report.method ? `方法：${report.method}` : card.method ? `方法：${card.method}` : "",
+        report.innovation ? `创新点：${report.innovation}` : "",
+        report.engineering_value ? `工程价值：${report.engineering_value}` : "",
+      ].filter(Boolean);
+      return sections.length > 1 ? sections.join("\n\n") : "";
+    })
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (_) { /* fall back for non-secure LAN origins or denied permission */ }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.className = "clipboard-fallback";
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.setAttribute("aria-hidden", "true");
+  const previousFocus = document.activeElement;
+  document.body.appendChild(textarea);
+  let copied = false;
+  try {
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    if (previousFocus && typeof previousFocus.focus === "function") previousFocus.focus();
+  }
+  if (!copied) throw new Error("浏览器未授权剪贴板写入");
+}
+
+async function copyNotebookDigest() {
+  const text = notebookDigestText();
+  if (!text) {
+    showAlert("笔记本中还没有可复制的研读摘要。");
+    return;
+  }
+  try {
+    await writeClipboardText(text);
+    showAlert("笔记本研读摘要已复制到剪贴板。");
+  } catch (error) {
+    showAlert(`复制摘要失败：${error.message}`);
+  }
+}
+
+async function clearNotebook() {
+  const paperIds = Array.from(state.notebookPapers);
+  if (!paperIds.length) return;
+  if (!window.confirm(`确定移出笔记本中的全部 ${paperIds.length} 篇论文吗？此操作不会删除论文原文，但无法一键撤销。`)) return;
+  const button = document.getElementById("notebookClearButton");
+  if (button) button.disabled = true;
+  showAlert(`正在移除笔记本中的 ${paperIds.length} 篇论文...`);
+  const results = [];
+  for (let offset = 0; offset < paperIds.length; offset += 5) {
+    const batch = paperIds.slice(offset, offset + 5);
+    results.push(...await Promise.allSettled(batch.map((paperId) => apiJson(`/papers/${encodeURIComponent(paperId)}/select`, {
+      method: "POST",
+      headers: { "Idempotency-Key": `web-notebook-clear-${paperId}-${Date.now()}` },
+      body: JSON.stringify({ selected: false }),
+    }))));
+  }
+  const failedIds = paperIds.filter((_, index) => results[index].status === "rejected");
+  const removedIds = paperIds.filter((paperId) => !failedIds.includes(paperId));
+  removedIds.forEach((paperId) => state.notebookPapers.delete(paperId));
+  state.notebookItems = state.notebookItems.filter((paper) => !removedIds.includes(getPaperId(paper)));
+  state.papers = state.papers.map((paper) => removedIds.includes(getPaperId(paper)) ? { ...paper, selected: false } : paper);
+  renderDashboard();
+  renderPaperLibrary();
+  renderNotebookView();
+  showAlert(failedIds.length
+    ? `已移除 ${removedIds.length} 篇，另有 ${failedIds.length} 篇保存失败，可稍后重试。`
+    : `已清空笔记本，共移除 ${removedIds.length} 篇论文。`);
 }
 
 // 任务中心的固定类型目录：即使当前加载的任务里没有某种类型（例如早期创建的
@@ -2983,9 +3086,25 @@ function renderJobs() {
   }
   const kindFilter = document.getElementById("jobKindFilter")?.value || "";
   const statusFilter = document.getElementById("jobStatusFilter")?.value || "";
+  const searchFilter = String(document.getElementById("jobSearch")?.value || "").trim().toLowerCase();
+  const titleMap = paperIdToTitleMap();
   const visibleJobs = state.jobs.filter((job) => {
     if (kindFilter && String(job.kind || "") !== kindFilter) return false;
     if (statusFilter && String(job.status || "") !== statusFilter) return false;
+    if (searchFilter) {
+      const target = job.target_id || job.request?.paper_id || job.request?.paper_version_id || "";
+      const haystack = [
+        job.id,
+        job.job_id,
+        job.kind,
+        target,
+        titleMap.get(target),
+        jobLlmErrorSummary(job),
+        jsonSummary(job.error),
+        jsonSummary(job.result),
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(searchFilter)) return false;
+    }
     return true;
   });
   if (!visibleJobs.length) {
@@ -3163,7 +3282,7 @@ function paperIdToTitleMap() {
   // Build a lookup from paper id / paper_version id to a display title so job
   // targets can be shown as readable paper titles instead of raw ids.
   const map = new Map();
-  const all = [...(state.papers || []), ...(state.notebookItems || [])];
+  const all = [...(state.papers || []), ...(state.allPapers || []), ...(state.notebookItems || [])];
   all.forEach((paper) => {
     const title = paperTitle(paper);
     const pid = getPaperId(paper);
@@ -3429,7 +3548,7 @@ function renderRelations() {
     const byType = {};
     items.forEach((r) => { const t = r.relation_type || "relation"; byType[t] = (byType[t] || 0) + 1; });
     const typeSummary = Object.entries(byType)
-      .map(([type, count]) => html`<span class="tag">${type} ${count}</span>`).join(" ");
+      .map(([type, count]) => html`<span class="tag" title="原始类型：${type}">${relationTypeLabel(type)} ${count}</span>`).join(" ");
     // Sort by confidence descending and paginate so the view stays responsive
     // even when a full rebuild produces thousands of edges. Filtering applies
     // before pagination so a search shows all matches.
@@ -3457,7 +3576,7 @@ function renderRelations() {
           return html`
           <article class="relation-card card-collapsible ${relFolded ? "card-folded" : ""}" data-fold-key="${relKey}">
             <div class="relation-card-head">
-              <span class="tag">${relation.relation_type || "relation"}</span>
+              <span class="tag" title="原始类型：${relation.relation_type || "relation"}">${relationTypeLabel(relation.relation_type)}</span>
               <span class="pill confidence-pill">置信度 ${(Number(relation.confidence) || 0).toFixed(2)}</span>
               <button class="card-fold-toggle" type="button" data-fold="${relKey}" title="${relFolded ? "展开这张卡片" : "折叠这张卡片，只保留标题条"}"><span class="fold-icon">▸</span>${relFolded ? "展开" : "收起"}</button>
             </div>
@@ -3515,6 +3634,17 @@ function relationFoldKey(relation) {
   const to = relation?.to_paper_id || relation?.to_id || relation?.to || "";
   const type = String(relation?.relation_type || relation?.type || "relation").toLowerCase();
   return `relation:${from}:${to}:${type}`;
+}
+
+function relationTypeLabel(type) {
+  return {
+    complements: "方法互补",
+    conflicts: "结论冲突",
+    similar: "方法相似",
+    extends: "工作扩展",
+    supports: "证据支持",
+    relation: "一般关联",
+  }[String(type || "relation").toLowerCase()] || type || "一般关联";
 }
 
 async function runRelationsRebuild() {
@@ -3900,6 +4030,12 @@ function renderWorkflows() {
         ${raw(renderWorkflowDag(workflow))}
       </div>
       ${raw(workflow.schedule ? html`<p class="meta workflow-schedule">每日 ${workflow.schedule.daily_hour}:00 · ${workflow.schedule.timezone} · 回看 ${workflow.schedule.lookback_days} 天 · 最多 ${workflow.schedule.max_results} 篇/主题</p>` : "")}
+      <div class="workflow-actions">
+        ${raw(workflow.id === "daily-paper-intelligence"
+          ? html`<button class="primary compact-action" type="button" data-workflow-action="run-discovery" ${workflow.enabled ? "" : "disabled"}>立即发现</button>`
+          : html`<button class="secondary compact-action" type="button" data-workflow-action="open-patent">进入专利候选</button>`)}
+        <span class="meta">${workflow.id === "daily-paper-intelligence" ? "启动发现、下载、解析与可选翻译；研读报告在阅读台按需生成" : "该工作流包含查新与人工审批门禁，需在专利候选页逐步执行"}</span>
+      </div>
       <div class="card-fold-bar">
         <span class="fold-snippet" title="${escapeHtml(workflow.name)}">${escapeHtml(workflow.name)}<span class="meta">${workflow.enabled ? "可运行" : "待配置"}</span></span>
         <button class="card-fold-toggle" type="button" data-fold="${wfKey}" data-fold-restore title="展开这张卡片"><span class="fold-icon">▸</span>展开</button>
@@ -3909,6 +4045,15 @@ function renderWorkflows() {
   }).join("") : emptyBlock("后端未返回内置工作流。");
   bindCardFoldToggles(catalog);
   bindCardFoldBatch(catalog);
+  catalog.querySelectorAll("[data-workflow-action]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      if (button.dataset.workflowAction === "run-discovery") {
+        withButtonLoading(event.currentTarget, runDiscovery);
+      } else {
+        switchView("patents", true);
+      }
+    });
+  });
   const history = normalizeList(state.workflows?.runs, ["items", "runs"]);
   runs.innerHTML = history.length ? html`
     <div class="fold-batch-bar">
@@ -4281,7 +4426,7 @@ async function runDiscovery() {
     }
     await apiJson("/discovery-runs", {
       method: "POST",
-      headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}` },
+      headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}-${userActionNonce()}` },
       body: JSON.stringify({
         source: "multi",
         window_start: windowStart,
@@ -4318,7 +4463,7 @@ async function runDiscoveryFromJobs() {
     }
     await apiJson("/discovery-runs", {
       method: "POST",
-      headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}` },
+      headers: { "Idempotency-Key": `web-discovery-${startDate}-${selectedDate}-${topicIds.join(".") || "all"}-${userActionNonce()}` },
       body: JSON.stringify({
         source: "multi",
         window_start: windowStart,
@@ -4477,7 +4622,7 @@ async function submitDirectedDiscovery(event) {
     showAlert("正在提交定向发现任务...");
     await apiJson("/discovery-runs", {
       method: "POST",
-      headers: { "Idempotency-Key": `web-directed-${keyParts.join("-")}` },
+      headers: { "Idempotency-Key": `web-directed-${keyParts.join("-")}-${userActionNonce()}` },
       body: JSON.stringify(payload),
     });
     closeDirectedDiscovery();

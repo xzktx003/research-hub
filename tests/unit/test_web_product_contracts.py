@@ -1003,3 +1003,30 @@ def test_pdf_zoom_offers_fit_width_option() -> None:
     assert '.pdf-page-img[data-zoom="1"]' in styles
     assert '.pdf-page-img[data-zoom="1.5"]' in styles
     assert '.pdf-page-img[data-zoom="3"]' in styles
+
+
+def test_remaining_user_audit_actions_are_exposed() -> None:
+    """用户审计剩余的高价值操作必须可直接完成，而不是只在报告中记录。"""
+    app = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert 'data-workflow-action="run-discovery"' in app
+    assert 'data-workflow-action="open-patent"' in app
+    assert "withButtonLoading(event.currentTarget, runDiscovery)" in app
+    assert "function userActionNonce()" in app
+    assert 'id="jobSearch"' in index
+    assert 'document.getElementById("jobSearch")' in app
+    assert "titleMap.get(target)" in app
+    assert "...(state.allPapers || [])" in app
+    assert 'id="notebookClearButton"' in index
+    assert 'id="notebookCopyDigestButton"' in index
+    assert "async function clearNotebook()" in app
+    assert "window.confirm" in app
+    assert "offset += 5" in app
+    assert "Promise.allSettled" in app
+    assert "async function copyNotebookDigest()" in app
+    assert "async function writeClipboardText(text)" in app
+    assert "document.execCommand(\"copy\")" in app
+    assert "previousFocus.focus()" in app
+    assert "function relationTypeLabel(type)" in app
+    assert 'title="原始类型：${type}"' in app

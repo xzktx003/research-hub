@@ -7,7 +7,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'none'">
     <title>AI Infra Research Hub</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f7cff'/%3E%3Cstop offset='1' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 46V30l8-8 8 8v16M50 22v18M44 26l6-4 6 4v16' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/static/styles.css?v=20260805polish13">
+    <link rel="stylesheet" href="/static/styles.css?v=20260806polish18">
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主内容</a>
@@ -301,6 +301,7 @@
             </div>
             <div class="job-filters">
               <button class="primary compact-action" id="jobRunDiscoveryButton" type="button" title="按当前日期与回溯窗口从各数据源发现论文并入库">触发发现</button>
+              <input type="search" id="jobSearch" placeholder="搜索最近任务的标题、ID 或错误…" aria-label="搜索最近 1000 条任务" title="搜索当前已加载的最近 1000 条任务">
               <select id="jobKindFilter" aria-label="按任务类型筛选">
                 <option value="">全部类型</option>
               </select>
@@ -438,7 +439,10 @@
                   <h2>我的笔记本</h2>
                   <p>已收藏的论文及其研读解读。点击论文标题展开查看详情。</p>
                 </div>
-                <span class="pill" id="notebookCount">0 篇</span>
+                <div class="notebook-heading-actions">
+                  <span class="pill" id="notebookCount">0 篇</span>
+                  <button class="danger-secondary compact-action" id="notebookClearButton" type="button" disabled>清空笔记本</button>
+                </div>
               </div>
               <div id="notebookPaperList" class="paper-list"></div>
             </section>
@@ -448,6 +452,7 @@
                   <h2>笔记本研读摘要</h2>
                   <p>汇总笔记本中所有论文的研读报告和技术卡片。</p>
                 </div>
+                <button class="secondary compact-action" id="notebookCopyDigestButton" type="button" disabled>复制摘要</button>
               </div>
               <div id="notebookDigest" class="compact-list"></div>
             </section>
@@ -658,6 +663,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260805polish13" defer></script>
+    <script src="/static/app.js?v=20260806polish18" defer></script>
   </body>
 </html>

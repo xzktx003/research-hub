@@ -892,6 +892,31 @@ html.theme-dark .metric strong {
 .job-filters select {
   max-width: 200px;
 }
+.job-filters input[type="search"] {
+  flex: 1 1 260px;
+  min-width: 220px;
+  max-width: 460px;
+}
+
+.notebook-heading-actions,
+.workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workflow-actions {
+  margin-top: 12px;
+}
+
+.clipboard-fallback {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* 关系视图：按论文过滤 */
 .relations-header-row {
